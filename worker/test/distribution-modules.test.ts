@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
-import { dueDate, reminderDate, invoiceTotals, lineTotal } from '../src/finance';
+import { dueDate, reminderDate, invoiceTotals, lineTotal, normalizeWhatsApp, formatWhatsApp } from '../src/finance';
+import { renderPublicInvoiceHtml } from '../src/public-invoice';
 
 function setupTestDb() {
   const root = path.resolve(__dirname, '..');
@@ -83,8 +84,8 @@ describe('Module 1: Professional Invoice & Billing Upgrade', () => {
     });
 
     // Create draft
-    db.prepare('INSERT INTO invoice_drafts VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(
-      'd1', 'c1', 'admin', 'main', '2026-11-22', '2026-12-22', 'credit', 'Net 30', 'Draft note', '', 'fixed', 0, draftPayload, now, now
+    db.prepare('INSERT INTO invoice_drafts(id,customer_id,rep_id,warehouse_id,invoice_date,due_at,payment_method,payment_terms,notes,terms,invoice_discount_type,invoice_discount_value,payload_json,created_at,updated_at,customer_whatsapp) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(
+      'd1', 'c1', 'admin', 'main', '2026-11-22', '2026-12-22', 'credit', 'Net 30', 'Draft note', '', 'fixed', 0, draftPayload, now, now, '94771234567'
     );
 
     const saved = db.prepare('SELECT * FROM invoice_drafts WHERE id=?').get('d1') as any;
@@ -244,5 +245,99 @@ describe('Module 3: Consignment / Sale or Return', () => {
 
     // Exceeding issued quantity throws
     expect(() => db.prepare("UPDATE consignment_items SET sold_quantity=sold_quantity+1 WHERE id='ci-1'").run()).toThrow();
+  });
+});
+
+describe('Module: Invoice WhatsApp Sharing & Public Invoice Verification', () => {
+  it('stores customer WhatsApp and unique share token with each invoice', () => {
+    const { db, now } = setupTestDb();
+    const token = 'test-share-token-12345';
+    const wa = '94771234567';
+
+    db.prepare(`INSERT INTO invoices(id,number,customer_id,rep_id,warehouse_id,total_cents,paid_cents,status,due_at,idempotency_key,created_at,cancelled_at,subtotal_cents,item_discount_cents,invoice_discount_cents,payment_method,payment_terms,notes,terms,source_type,source_id,customer_whatsapp,share_token) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      'inv-wa-1', 'INV-WA-001', 'c1', 'admin', 'main', 20000, 20000, 'posted', null, 'idem-wa-1', now, null, 20000, 0, 0, 'cash', '', '', '', 'sale', null, wa, token
+    );
+
+    const saved = db.prepare('SELECT customer_whatsapp, share_token FROM invoices WHERE id=?').get('inv-wa-1') as any;
+    expect(saved.customer_whatsapp).toBe('94771234567');
+    expect(saved.share_token).toBe(token);
+
+    // Enforces unique share_token
+    expect(() => {
+      db.prepare(`INSERT INTO invoices(id,number,customer_id,rep_id,warehouse_id,total_cents,paid_cents,status,due_at,idempotency_key,created_at,cancelled_at,subtotal_cents,item_discount_cents,invoice_discount_cents,payment_method,payment_terms,notes,terms,source_type,source_id,customer_whatsapp,share_token) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+        'inv-wa-2', 'INV-WA-002', 'c1', 'admin', 'main', 20000, 20000, 'posted', null, 'idem-wa-2', now, null, 20000, 0, 0, 'cash', '', '', '', 'sale', null, wa, token
+      );
+    }).toThrow();
+  });
+
+  it('allows authorized users to update WhatsApp recipient on a posted invoice without violating immutability', () => {
+    const { db, now } = setupTestDb();
+    const token = 'test-token-update';
+    db.prepare(`INSERT INTO invoices(id,number,customer_id,rep_id,warehouse_id,total_cents,paid_cents,status,due_at,idempotency_key,created_at,cancelled_at,subtotal_cents,item_discount_cents,invoice_discount_cents,payment_method,payment_terms,notes,terms,source_type,source_id,customer_whatsapp,share_token) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      'inv-wa-up', 'INV-WA-UP', 'c1', 'admin', 'main', 20000, 20000, 'posted', null, 'idem-wa-up', now, null, 20000, 0, 0, 'cash', '', '', '', 'sale', null, '94771234567', token
+    );
+
+    // Update customer_whatsapp directly (allowed by immutability triggers)
+    db.prepare('UPDATE invoices SET customer_whatsapp=? WHERE id=?').run('94766615492', 'inv-wa-up');
+    const updated = db.prepare('SELECT customer_whatsapp FROM invoices WHERE id=?').get('inv-wa-up') as any;
+    expect(updated.customer_whatsapp).toBe('94766615492');
+
+    // Audit log can be recorded
+    db.prepare('INSERT INTO audit_logs VALUES(?,?,?,?,?,?)').run('aud-1', 'admin', 'invoice.whatsapp_updated', 'inv-wa-up', 'Old: 94771234567, New: 94766615492', now);
+    const auditRow = db.prepare('SELECT * FROM audit_logs WHERE id=?').get('aud-1') as any;
+    expect(auditRow.action).toBe('invoice.whatsapp_updated');
+  });
+
+  it('renders complete, accessible public invoice HTML with branding, customer details, and print capability', () => {
+    const mockInvoice = {
+      id: 'inv-test-html',
+      number: 'INV-20261122-001',
+      created_at: '2026-11-22T00:00:00Z',
+      shop_name: 'Perera Supermarket',
+      owner_name: 'Nimal Perera',
+      customer_address: 'No 45, Main Street, Narangoda',
+      customer_whatsapp: '94771234567',
+      business_name: 'Nugathalawa Ceylon Tea Export (Pvt) Ltd',
+      business_address: 'Na Sewana, Hamangalla, Narangoda, Sri Lanka',
+      business_phone: '076 661 5492',
+      business_whatsapp: '076 696 5493',
+      business_email: 'sanjeewakumara7080@gmail.com',
+      subtotal_cents: 38000,
+      total_cents: 38000,
+      paid_cents: 10000,
+      due_at: '2026-12-22',
+      payment_method: 'credit',
+      notes: 'Please pay within 30 days',
+      terms: 'All teas are pure Ceylon tea.',
+    };
+
+    const mockItems = [
+      {
+        product_name: 'Nugathalawa Pure Ceylon BOPF Tea',
+        variant_label: '200g Packet',
+        unit: 'packet',
+        quantity: 1,
+        price_type: 'wholesale',
+        unit_price_cents: 38000,
+        item_discount_cents: 0,
+        shop_price_cents: 42000,
+        line_cents: 38000,
+      },
+    ];
+
+    const html = renderPublicInvoiceHtml({
+      invoice: mockInvoice,
+      items: mockItems,
+      showShopPrice: true,
+      showCustomerWhatsapp: true,
+    });
+
+    expect(html).toContain('Nugathalawa Ceylon Tea Export (Pvt) Ltd');
+    expect(html).toContain('INV-20261122-001');
+    expect(html).toContain('Perera Supermarket');
+    expect(html).toContain('+94 77 123 4567');
+    expect(html).toContain('Print / Save PDF');
+    expect(html).toContain('Issued By / Authorized Signature');
+    expect(html).toContain('Received By / Customer Signature');
   });
 });

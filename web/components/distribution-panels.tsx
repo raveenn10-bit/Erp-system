@@ -9,7 +9,7 @@ import {
   RotateCcw,
   Trash2,
 } from "lucide-react";
-import { api, idempotency, money } from "@/lib/api";
+import { api, formatWhatsApp, idempotency, money, normalizeWhatsApp } from "@/lib/api";
 
 export type Product = {
   variant_id: string;
@@ -314,6 +314,8 @@ export function BillingPanel({
       queryFn: () => api<Record<string, string>>("/billing/settings"),
     });
   const [customerId, setCustomer] = useState(""),
+    [customerWhatsapp, setCustomerWhatsapp] = useState(""),
+    [showLivePreview, setShowLivePreview] = useState(false),
     [warehouseId, setWarehouse] = useState("main"),
     [invoiceDate, setInvoiceDate] = useState(today()),
     [lines, setLines] = useState<Line[]>([
@@ -446,6 +448,106 @@ export function BillingPanel({
       setBusy(false);
     }
   }
+  async function postAndSendWhatsApp() {
+    setBusy(true);
+    setError("");
+    try {
+      const normNumber = normalizeWhatsApp(customerWhatsapp);
+      if (!normNumber) {
+        throw new Error("Please enter a valid Customer WhatsApp number (e.g. 077 123 4567)");
+      }
+      const p = payload(true);
+      const result = await api<{
+        id: string;
+        number: string;
+        totalCents: number;
+        paidCents: number;
+        dueAt: string | null;
+        shareToken: string;
+      }>("/billing/invoices", {
+        method: "POST",
+        body: JSON.stringify(p),
+      });
+      await client.invalidateQueries();
+
+      const cust = customers.find((x) => x.id === customerId);
+      const shopName = cust?.shop_name || "Valued Customer";
+      const totalStr = money(result.totalCents);
+      const paidStr = money(result.paidCents);
+      const balanceStr = money(Math.max(0, result.totalCents - result.paidCents));
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      const invoiceLink = result.shareToken
+        ? `${origin}/view/invoice/${result.shareToken}`
+        : `${origin}/dashboard`;
+
+      const message = `Hello,\n\nYour invoice from Nugathalawa Ceylon Tea Export (Pvt) Ltd is ready.\n\nInvoice No: ${result.number}\nShop: ${shopName}\nTotal: ${totalStr}\nPaid: ${paidStr}\nBalance: ${balanceStr}\n\nView / Download Invoice:\n${invoiceLink}\n\nThank you!`;
+
+      window.open(
+        `https://wa.me/${normNumber}?text=${encodeURIComponent(message)}`,
+        "_blank",
+        "noopener,noreferrer"
+      );
+
+      onPosted(result.id);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function downloadDraftPdf() {
+    const { jsPDF } = await import("jspdf");
+    const pdf = new jsPDF({ unit: "mm", format: "a4" });
+    const cust = customers.find((x) => x.id === customerId);
+    let y = 15;
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(16);
+    pdf.text("NUGATHALAWA CEYLON TEA EXPORT (PVT) LTD", 105, y, { align: "center" });
+    y += 6;
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+    pdf.text("Na Sewana, Hamangalla, Narangoda, Sri Lanka", 105, y, { align: "center" });
+    y += 5;
+    pdf.text("Tel: 076 661 5492 · WhatsApp: 076 696 5493", 105, y, { align: "center" });
+    y += 6;
+    pdf.line(15, y, 195, y);
+    y += 8;
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(14);
+    pdf.text("SALES INVOICE (DRAFT PREVIEW)", 105, y, { align: "center" });
+    y += 8;
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+    pdf.text(`Date: ${invoiceDate}`, 15, y);
+    pdf.text(`Customer: ${cust?.shop_name || "Not selected"}`, 15, y + 5);
+    if (customerWhatsapp) {
+      pdf.text(`WhatsApp: ${formatWhatsApp(customerWhatsapp)}`, 15, y + 10);
+      y += 5;
+    }
+    y += 10;
+    pdf.line(15, y, 195, y);
+    y += 6;
+    for (const l of lines.filter((x) => x.variantId)) {
+      const p = products.find((x) => x.variant_id === l.variantId);
+      if (!p) continue;
+      const unit = l.priceType === "retail" ? p.retail_cents : l.priceType === "shop" ? p.shop_price_cents : p.wholesale_cents;
+      const lineTotalVal = (unit * l.quantity) / 100;
+      pdf.setFont("helvetica", "bold");
+      pdf.text(`${p.name} · ${p.label}`, 15, y);
+      pdf.setFont("helvetica", "normal");
+      pdf.text(`${l.quantity} × ${(unit / 100).toFixed(2)}  ${lineTotalVal.toFixed(2)}`, 195, y, { align: "right" });
+      y += 6;
+    }
+    pdf.line(15, y, 195, y);
+    y += 8;
+    pdf.text(`Subtotal: ${(totals.subtotal / 100).toFixed(2)}`, 195, y, { align: "right" });
+    y += 5;
+    pdf.setFont("helvetica", "bold");
+    pdf.text(`Grand Total: ${(totals.total / 100).toFixed(2)}`, 195, y, { align: "right" });
+    pdf.save(`DRAFT-INVOICE-${invoiceDate}.pdf`);
+  }
+
   function loadDraft(d: any) {
     const p = JSON.parse(d.payload_json);
     setDraftId(d.id);

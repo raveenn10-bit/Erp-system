@@ -1,7 +1,8 @@
 "use client";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Download, MessageCircle, Printer, ReceiptText, X } from "lucide-react";
-import { api, money } from "@/lib/api";
+import { Check, Download, MessageCircle, Printer, ReceiptText, X } from "lucide-react";
+import { api, formatWhatsApp, money, normalizeWhatsApp } from "@/lib/api";
 
 type Detail = {
   invoice: {
@@ -11,6 +12,8 @@ type Detail = {
     shop_name: string;
     address: string;
     whatsapp: string;
+    customer_whatsapp?: string;
+    share_token?: string;
     business_name: string;
     business_address: string;
     business_phone: string;
@@ -57,7 +60,42 @@ export function InvoiceActions({
     queryFn: () => api<Record<string, string>>("/billing/settings"),
   });
   const data = detail.data,
-    showShop = settings.data?.invoice_show_shop_price === "true";
+    showShop = settings.data?.invoice_show_shop_price === "true",
+    showCustomerWhatsapp = settings.data?.invoice_show_customer_whatsapp !== "false";
+
+  const [waInput, setWaInput] = useState("");
+  const [isUpdatingWa, setIsUpdatingWa] = useState(false);
+  const [waMsg, setWaMsg] = useState("");
+
+  useEffect(() => {
+    if (data?.invoice) {
+      setWaInput(data.invoice.customer_whatsapp || data.invoice.whatsapp || "");
+    }
+  }, [data?.invoice]);
+
+  async function updateWhatsappNumber() {
+    if (!data) return;
+    const normalized = normalizeWhatsApp(waInput);
+    if (!normalized) {
+      setWaMsg("Please enter a valid WhatsApp number.");
+      return;
+    }
+    setIsUpdatingWa(true);
+    setWaMsg("");
+    try {
+      await api<{ ok: boolean; whatsapp: string }>(`/invoices/${data.invoice.id}/whatsapp`, {
+        method: "PATCH",
+        body: JSON.stringify({ whatsapp: waInput }),
+      });
+      setWaMsg("WhatsApp recipient updated successfully.");
+      await detail.refetch();
+    } catch (err) {
+      setWaMsg((err as Error).message);
+    } finally {
+      setIsUpdatingWa(false);
+    }
+  }
+
   async function download(thermal = false) {
     if (!data) return;
     const { jsPDF } = await import("jspdf");
@@ -95,10 +133,12 @@ export function InvoiceActions({
     y += 7;
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(thermal ? 8 : 9);
+    const activeWhatsapp = i.customer_whatsapp || i.whatsapp;
     for (const text of [
       `Invoice: ${i.number}`,
       `Date: ${i.created_at.slice(0, 10)}`,
       `Customer: ${i.shop_name}`,
+      showCustomerWhatsapp && activeWhatsapp ? `WhatsApp: ${formatWhatsApp(activeWhatsapp)}` : "",
       i.address ? `Address: ${i.address}` : "",
       `Payment: ${i.payment_method}`,
     ].filter(Boolean)) {
@@ -196,19 +236,32 @@ export function InvoiceActions({
     }
     pdf.save(`${i.number}-${thermal ? "80mm" : "A4"}.pdf`);
   }
+
   function share() {
     if (!data) return;
     const i = data.invoice,
-      phone = (i.whatsapp || i.business_whatsapp || "")
-        .replace(/\D/g, "")
-        .replace(/^0/, "94"),
-      message = `*${i.business_name}*\n*Invoice:* ${i.number}\n*Customer:* ${i.shop_name}\n*Total:* ${money(i.total_cents)}\n*Paid:* ${money(i.paid_cents)}\n*Outstanding:* ${money(i.total_cents - i.paid_cents)}${i.due_at ? `\n*Due:* ${i.due_at}` : ""}`;
+      phone = normalizeWhatsApp(waInput || i.customer_whatsapp || i.whatsapp || "");
+    if (!phone) {
+      setWaMsg("Please enter a valid WhatsApp number before sharing.");
+      return;
+    }
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const invoiceLink = i.share_token
+      ? `${origin}/view/invoice/${i.share_token}`
+      : `${origin}/dashboard`;
+    const totalStr = money(i.total_cents);
+    const paidStr = money(i.paid_cents);
+    const balanceStr = money(Math.max(0, i.total_cents - i.paid_cents));
+
+    const message = `Hello,\n\nYour invoice from ${i.business_name || "Nugathalawa Ceylon Tea Export (Pvt) Ltd"} is ready.\n\nInvoice No: ${i.number}\nShop: ${i.shop_name}\nTotal: ${totalStr}\nPaid: ${paidStr}\nBalance: ${balanceStr}\n\nView / Download Invoice:\n${invoiceLink}\n\nThank you!`;
+
     window.open(
       `https://wa.me/${phone}?text=${encodeURIComponent(message)}`,
       "_blank",
       "noopener,noreferrer",
     );
   }
+
   return (
     <div className="dialog-backdrop" onMouseDown={close}>
       <div
@@ -256,9 +309,73 @@ export function InvoiceActions({
                   <b>Bill to</b>
                   <span>{data.invoice.shop_name}</span>
                   <span>{data.invoice.address}</span>
+                  <span>
+                    WhatsApp: {formatWhatsApp(data.invoice.customer_whatsapp || data.invoice.whatsapp || "Not configured")}
+                  </span>
                   <span>Payment: {data.invoice.payment_method}</span>
                 </div>
               </div>
+
+              {/* Dedicated WhatsApp Editing & Resend Section */}
+              <div
+                style={{
+                  background: "#f0fdf4",
+                  border: "1px solid #bbf7d0",
+                  borderRadius: "8px",
+                  padding: "12px 16px",
+                  margin: "12px 0 16px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                  <MessageCircle size={18} style={{ color: "#16a34a" }} />
+                  <b style={{ fontSize: "13px", color: "#166534" }}>WhatsApp Recipient:</b>
+                  <input
+                    type="tel"
+                    value={waInput}
+                    onChange={(e) => setWaInput(e.target.value)}
+                    placeholder="e.g. 077 123 4567"
+                    style={{
+                      padding: "6px 10px",
+                      fontSize: "13px",
+                      borderRadius: "6px",
+                      border: "1px solid #86efac",
+                      width: "180px",
+                    }}
+                  />
+                  <button
+                    className="secondary"
+                    type="button"
+                    disabled={isUpdatingWa}
+                    onClick={updateWhatsappNumber}
+                    style={{ fontSize: "12px", padding: "6px 12px" }}
+                  >
+                    {isUpdatingWa ? "Saving..." : "Update Number"}
+                  </button>
+                  <button
+                    className="primary"
+                    type="button"
+                    onClick={share}
+                    style={{
+                      background: "#16a34a",
+                      color: "#fff",
+                      fontSize: "12px",
+                      padding: "6px 14px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <MessageCircle size={14} />
+                    Resend via WhatsApp
+                  </button>
+                </div>
+                {waMsg && (
+                  <p style={{ margin: "6px 0 0", fontSize: "12px", color: waMsg.includes("successfully") ? "#15803d" : "#b91c1c" }}>
+                    {waMsg}
+                  </p>
+                )}
+              </div>
+
               <div className="table-wrap">
                 <table className="data-table">
                   <thead>
@@ -348,9 +465,13 @@ export function InvoiceActions({
                   <Printer size={16} />
                   Print
                 </button>
-                <button className="secondary" onClick={share}>
+                <button
+                  className="secondary"
+                  onClick={share}
+                  style={{ color: "#16a34a", borderColor: "#86efac" }}
+                >
                   <MessageCircle size={16} />
-                  WhatsApp
+                  Send via WhatsApp
                 </button>
               </div>
             </>

@@ -20,6 +20,7 @@ import {
 } from "./security";
 import { asCents, dueDate, lineTotal, reminderDate, sumLines } from "./finance";
 import distributionRoutes from "./distribution";
+import { renderPublicInvoiceHtml } from "./public-invoice";
 const app = new Hono<Env>();
 const safe = z.string().trim().min(1).max(180);
 const key = z.string().min(12).max(128);
@@ -188,6 +189,54 @@ app.post("/api/login", async (c) => {
   await audit(db, u.id, "login", u.id);
   return c.json({ ok: true });
 });
+app.get("/view/invoice/:token", async (c) => {
+  const token = c.req.param("token");
+  const db = c.env.DB;
+  const invoice = await db
+    .prepare(
+      `SELECT i.*,c.shop_name,c.owner_name,c.address AS customer_address,c.phone AS customer_phone,c.whatsapp AS customer_profile_whatsapp,b.name AS business_name,b.address AS business_address,b.phone AS business_phone,b.whatsapp AS business_whatsapp,b.email AS business_email,(SELECT value FROM system_settings WHERE key='invoice_show_shop_price') AS show_shop_price,(SELECT value FROM system_settings WHERE key='invoice_show_customer_whatsapp') AS show_customer_whatsapp FROM invoices i JOIN customers c ON c.id=i.customer_id CROSS JOIN business_settings b WHERE i.share_token=?`,
+    )
+    .bind(token)
+    .first();
+  if (!invoice) return c.html("<h1>Invoice Not Found</h1><p>The link is invalid or expired.</p>", 404);
+  const items = (
+    await db
+      .prepare(
+        "SELECT ii.*,p.name AS product_name,v.label AS variant_label,v.unit FROM invoice_items ii JOIN product_variants v ON v.id=ii.variant_id JOIN products p ON p.id=v.product_id WHERE ii.invoice_id=?",
+      )
+      .bind(invoice.id)
+      .all()
+  ).results;
+  const html = renderPublicInvoiceHtml({
+    invoice,
+    items,
+    showShopPrice: (invoice as any).show_shop_price === "true",
+    showCustomerWhatsapp: (invoice as any).show_customer_whatsapp !== "false",
+  });
+  return c.html(html);
+});
+
+app.get("/api/public/invoices/:token", async (c) => {
+  const token = c.req.param("token");
+  const db = c.env.DB;
+  const invoice = await db
+    .prepare(
+      `SELECT i.*,c.shop_name,c.owner_name,c.address AS customer_address,c.phone AS customer_phone,c.whatsapp AS customer_profile_whatsapp,b.name AS business_name,b.address AS business_address,b.phone AS business_phone,b.whatsapp AS business_whatsapp,b.email AS business_email,(SELECT value FROM system_settings WHERE key='invoice_show_shop_price') AS show_shop_price,(SELECT value FROM system_settings WHERE key='invoice_show_customer_whatsapp') AS show_customer_whatsapp FROM invoices i JOIN customers c ON c.id=i.customer_id CROSS JOIN business_settings b WHERE i.share_token=?`,
+    )
+    .bind(token)
+    .first();
+  if (!invoice) return c.json({ error: "Invoice not found" }, 404);
+  const items = (
+    await db
+      .prepare(
+        "SELECT ii.*,p.name AS product_name,v.label AS variant_label,v.unit FROM invoice_items ii JOIN product_variants v ON v.id=ii.variant_id JOIN products p ON p.id=v.product_id WHERE ii.invoice_id=?",
+      )
+      .bind(invoice.id)
+      .all()
+  ).results;
+  return c.json({ invoice, items });
+});
+
 app.use("/api/*", requireUser);
 app.route("/api", distributionRoutes);
 app.get("/api/me", async (c) => c.json({ user: current(c) }));

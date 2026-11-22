@@ -10,7 +10,7 @@ import {
   type Env,
   type Principal,
 } from "./security";
-import { dueDate, invoiceTotals, lineTotal, type Discount } from "./finance";
+import { dueDate, invoiceTotals, lineTotal, normalizeWhatsApp, formatWhatsApp, type Discount } from "./finance";
 
 const routes = new Hono<Env>();
 const safe = z.string().trim().min(1).max(300);
@@ -38,6 +38,7 @@ const billingInput = z.object({
   dueAt: z.string().date().nullable().optional(),
   notes: z.string().max(1000).default(""),
   terms: z.string().max(1500).default(""),
+  customerWhatsapp: z.string().max(40).optional().default(""),
   draftId: z.string().optional(),
 });
 const distributionItems = z
@@ -136,10 +137,10 @@ async function postInvoice(
     throw new Error("Duplicate product variants are not allowed");
   const customer = await db
     .prepare(
-      "SELECT id,credit_days,credit_limit_cents FROM customers WHERE id=? AND active=1",
+      "SELECT id,credit_days,credit_limit_cents,whatsapp,phone FROM customers WHERE id=? AND active=1",
     )
     .bind(input.customerId)
-    .first<{ id: string; credit_days: number; credit_limit_cents: number }>();
+    .first<{ id: string; credit_days: number; credit_limit_cents: number; whatsapp: string; phone: string }>();
   if (!customer) throw new Error("Customer unavailable");
   const scope = await checkScope(c, p, input.customerId, input.warehouseId);
   if (scope) return { response: scope };
@@ -182,11 +183,13 @@ async function postInvoice(
   }
   const id = uuid(),
     number = ref("INV", id, input.invoiceDate),
-    created = now();
+    created = now(),
+    shareToken = (uuid() + uuid()).replace(/-/g, ""),
+    customerWhatsapp = normalizeWhatsApp(input.customerWhatsapp || (customer as any).whatsapp || (customer as any).phone || "");
   const statements: D1PreparedStatement[] = [
     db
       .prepare(
-        `INSERT INTO invoices(id,number,customer_id,rep_id,warehouse_id,total_cents,paid_cents,status,due_at,idempotency_key,created_at,cancelled_at,subtotal_cents,item_discount_cents,invoice_discount_cents,payment_method,payment_terms,notes,terms,source_type,source_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO invoices(id,number,customer_id,rep_id,warehouse_id,total_cents,paid_cents,status,due_at,idempotency_key,created_at,cancelled_at,subtotal_cents,item_discount_cents,invoice_discount_cents,payment_method,payment_terms,notes,terms,source_type,source_id,customer_whatsapp,share_token) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .bind(
         id,
@@ -210,6 +213,8 @@ async function postInvoice(
         input.terms,
         sourceType,
         sourceId,
+        customerWhatsapp,
+        shareToken,
       ),
   ];
   for (const item of calculated) {
@@ -301,6 +306,8 @@ async function postInvoice(
       ...totals,
       paidCents: input.amountPaidCents,
       dueAt: due,
+      customerWhatsapp,
+      shareToken,
     },
   };
 }
@@ -323,7 +330,7 @@ routes.get("/billing/settings", async (c) => {
   if (denied) return denied;
   const rows = (
     await c.env.DB.prepare(
-      "SELECT key,value FROM system_settings WHERE key IN('invoice_show_shop_price','invoice_default_terms')",
+      "SELECT key,value FROM system_settings WHERE key IN('invoice_show_shop_price','invoice_default_terms','invoice_show_customer_whatsapp')",
     ).all<{ key: string; value: string }>()
   ).results;
   return c.json(Object.fromEntries(rows.map((x) => [x.key, x.value])));
@@ -334,20 +341,59 @@ routes.patch("/billing/settings", async (c) => {
   const d = await json(
     c,
     z.object({
-      showShopPrice: z.boolean(),
-      defaultTerms: z.string().max(1500),
+      showShopPrice: z.boolean().optional(),
+      showCustomerWhatsapp: z.boolean().optional(),
+      defaultTerms: z.string().max(1500).optional(),
     }),
   );
-  await c.env.DB.batch([
-    c.env.DB.prepare(
-      "INSERT INTO system_settings(key,value) VALUES('invoice_show_shop_price',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-    ).bind(String(d.showShopPrice)),
-    c.env.DB.prepare(
-      "INSERT INTO system_settings(key,value) VALUES('invoice_default_terms',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-    ).bind(d.defaultTerms),
-  ]);
-  await audit(c.env.DB, current(c).id, "billing.settings_updated", null);
+  const stmts: any[] = [];
+  if (d.showShopPrice !== undefined) {
+    stmts.push(
+      c.env.DB.prepare(
+        "INSERT INTO system_settings(key,value) VALUES('invoice_show_shop_price',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+      ).bind(String(d.showShopPrice)),
+    );
+  }
+  if (d.showCustomerWhatsapp !== undefined) {
+    stmts.push(
+      c.env.DB.prepare(
+        "INSERT INTO system_settings(key,value) VALUES('invoice_show_customer_whatsapp',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+      ).bind(String(d.showCustomerWhatsapp)),
+    );
+  }
+  if (d.defaultTerms !== undefined) {
+    stmts.push(
+      c.env.DB.prepare(
+        "INSERT INTO system_settings(key,value) VALUES('invoice_default_terms',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+      ).bind(d.defaultTerms),
+    );
+  }
+  if (stmts.length) {
+    await c.env.DB.batch(stmts);
+    await audit(c.env.DB, current(c).id, "billing.settings_updated", null);
+  }
   return c.json({ ok: true });
+});
+
+routes.patch("/invoices/:id/whatsapp", async (c) => {
+  const denied = await guard(c, "invoices.create");
+  if (denied) return denied;
+  const p = current(c),
+    id = c.req.param("id"),
+    db = c.env.DB;
+  const d = await json(c, z.object({ whatsapp: z.string().max(40) }));
+  const normalized = normalizeWhatsApp(d.whatsapp);
+  if (!normalized) return c.json({ error: "Invalid WhatsApp number" }, 400);
+  const invoice = await db
+    .prepare("SELECT id,rep_id,customer_whatsapp FROM invoices WHERE id=?")
+    .bind(id)
+    .first<{ id: string; rep_id: string; customer_whatsapp: string }>();
+  if (!invoice) return c.json({ error: "Invoice not found" }, 404);
+  if (!p.admin && invoice.rep_id !== p.id) return c.json({ error: "Forbidden" }, 403);
+  const oldPhone = invoice.customer_whatsapp || "";
+  await db.prepare("UPDATE invoices SET customer_whatsapp=? WHERE id=?").bind(normalized, id).run();
+  await audit(db, p.id, "invoice.whatsapp_updated", id, JSON.stringify({ old: oldPhone, new: normalized }));
+  return c.json({ ok: true, whatsapp: normalized });
 });
 
 routes.get("/invoice-drafts", async (c) => {
@@ -377,7 +423,7 @@ routes.post("/invoice-drafts", async (c) => {
   const scope = await checkScope(c, p, d.customerId, d.warehouseId);
   if (scope) return scope;
   await c.env.DB.prepare(
-    `INSERT INTO invoice_drafts(id,customer_id,rep_id,warehouse_id,invoice_date,due_at,payment_method,payment_terms,notes,terms,invoice_discount_type,invoice_discount_value,payload_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO invoice_drafts(id,customer_id,rep_id,warehouse_id,invoice_date,due_at,payment_method,payment_terms,notes,terms,invoice_discount_type,invoice_discount_value,payload_json,created_at,updated_at,customer_whatsapp) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   )
     .bind(
       id,
@@ -410,7 +456,7 @@ routes.patch("/invoice-drafts/:id", async (c) => {
     ),
     id = c.req.param("id");
   const result = await c.env.DB.prepare(
-    `UPDATE invoice_drafts SET customer_id=?,warehouse_id=?,invoice_date=?,due_at=?,payment_method=?,payment_terms=?,notes=?,terms=?,invoice_discount_type=?,invoice_discount_value=?,payload_json=?,updated_at=? WHERE id=? AND (?=1 OR rep_id=?)`,
+    `UPDATE invoice_drafts SET customer_id=?,warehouse_id=?,invoice_date=?,due_at=?,payment_method=?,payment_terms=?,notes=?,terms=?,invoice_discount_type=?,invoice_discount_value=?,payload_json=?,updated_at=?,customer_whatsapp=? WHERE id=? AND (?=1 OR rep_id=?)`,
   )
     .bind(
       d.customerId,

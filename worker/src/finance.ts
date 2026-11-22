@@ -24,3 +24,27 @@ export function invoiceTotals(lines:{unitPriceCents:number;quantity:number;disco
   const invoiceDiscountCents=discountAmount(afterItems,invoiceDiscount);
   return {subtotalCents:subtotal,itemDiscountCents,invoiceDiscountCents,totalDiscountCents:itemDiscountCents+invoiceDiscountCents,totalCents:afterItems-invoiceDiscountCents};
 }
+
+export function normalizeWhatsApp(phone: string): string {
+  if (!phone) return "";
+  const digits = phone.replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("0") && digits.length === 10) {
+    return "94" + digits.slice(1);
+  }
+  if (digits.length === 9 && digits.startsWith("7")) {
+    return "94" + digits;
+  }
+  if (digits.startsWith("94") && digits.length === 11) {
+    return digits;
+  }
+  return digits;
+}
+
+export function formatWhatsApp(phone: string): string {
+  const norm = normalizeWhatsApp(phone);
+  if (norm.startsWith("94") && norm.length === 11) {
+    return `+94 ${norm.slice(2, 4)} ${norm.slice(4, 7)} ${norm.slice(7)}`;
+  }
+  return phone;
+}
