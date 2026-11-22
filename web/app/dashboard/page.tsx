@@ -38,6 +38,7 @@ import {
   Settings,
   Shield,
   ShoppingBag,
+  ShoppingCart,
   Users,
   Warehouse,
   X,
@@ -63,6 +64,9 @@ import {
   ConsignmentPanel,
   FreeIssuePanel,
 } from "@/components/distribution-panels";
+import { I18nProvider, useI18n } from "@/lib/i18n";
+import { SmartPOSTerminal } from "@/components/smart-pos";
+import { DocumentCenterPanel } from "@/components/document-center";
 type User = { id: string; name: string; admin: number; role_id: string };
 type Summary = {
   totalSalesCents: number;
@@ -114,21 +118,61 @@ type Stock = {
   warehouse: string;
   quantity: number;
 };
-const menu = [
-  { name: "Overview", icon: LayoutDashboard },
-  { name: "Products", icon: Box },
-  { name: "Inventory", icon: Warehouse },
-  { name: "Customers", icon: Building2 },
-  { name: "Invoices", icon: FileText },
-  { name: "Free Issues", icon: Gift },
-  { name: "Consignments", icon: PackageCheck },
-  { name: "Payments", icon: CreditCard },
-  { name: "Credit Alerts", icon: Bell },
-  { name: "Expenses", icon: ArrowDownLeft },
-  { name: "Returns", icon: RotateCcw },
-  { name: "Reports", icon: BarChart3 },
-  { name: "Team", icon: Users },
-  { name: "Settings", icon: Settings },
+const menuGroups = [
+  {
+    titleEn: "MAIN WORKSPACE",
+    titleSi: "ප්‍රධාන වැඩබිම",
+    items: [
+      { name: "Overview", labelEn: "Overview", labelSi: "සාරාංශය", icon: LayoutDashboard },
+      { name: "Smart POS", labelEn: "Smart POS", labelSi: "Smart POS විකුණුම්", icon: ShoppingCart },
+    ],
+  },
+  {
+    titleEn: "SALES & BILLING",
+    titleSi: "විකුණුම් සහ බිල්පත්",
+    items: [
+      { name: "Invoices", labelEn: "Invoices", labelSi: "ඉන්වොයිසි", icon: FileText },
+      { name: "Payments", labelEn: "Payments", labelSi: "ගෙවීම් ලැබීම්", icon: CreditCard },
+      { name: "Credit Alerts", labelEn: "Credit Alerts", labelSi: "ණය මතක්කිරීම්", icon: Bell },
+    ],
+  },
+  {
+    titleEn: "INVENTORY & DISTRIBUTION",
+    titleSi: "තොග සහ බෙදාහැරීම්",
+    items: [
+      { name: "Products", labelEn: "Products", labelSi: "නිෂ්පාදන", icon: Box },
+      { name: "Inventory", labelEn: "Inventory", labelSi: "තොග ගබඩාව", icon: Warehouse },
+      { name: "Free Issues", labelEn: "Free Issues", labelSi: "නොමිලේ නිකුත් කිරීම්", icon: Gift },
+      { name: "Consignments", labelEn: "Consignments", labelSi: "තොග බෙදාහැරීම්", icon: PackageCheck },
+      { name: "Returns", labelEn: "Returns", labelSi: "ආපසු භාරගැනීම්", icon: RotateCcw },
+    ],
+  },
+  {
+    titleEn: "CUSTOMERS & FIELD",
+    titleSi: "පාරිභෝගිකයින්",
+    items: [
+      { name: "Customers", labelEn: "Customers", labelSi: "වෙළඳසැල්", icon: Building2 },
+    ],
+  },
+  {
+    titleEn: "FINANCE & REPORTS",
+    titleSi: "මූල්‍ය සහ වාර්තා",
+    adminOnly: true,
+    items: [
+      { name: "Expenses", labelEn: "Expenses", labelSi: "වියදම්", icon: ArrowDownLeft },
+      { name: "Reports", labelEn: "Reports", labelSi: "විශ්ලේෂණ වාර්තා", icon: BarChart3 },
+    ],
+  },
+  {
+    titleEn: "ADMINISTRATION",
+    titleSi: "පාලන අංශය",
+    adminOnly: true,
+    items: [
+      { name: "Document Center", labelEn: "Document Center", labelSi: "ලේඛන මධ්‍යස්ථානය", icon: FileText },
+      { name: "Team", labelEn: "Team", labelSi: "කාර්ය මණ්ඩලය", icon: Users },
+      { name: "Settings", labelEn: "Settings", labelSi: "සැකසුම්", icon: Settings },
+    ],
+  },
 ];
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 20000 } },
@@ -136,11 +180,14 @@ const queryClient = new QueryClient({
 export default function Dashboard() {
   return (
     <QueryClientProvider client={queryClient}>
-      <Workspace />
+      <I18nProvider>
+        <Workspace />
+      </I18nProvider>
     </QueryClientProvider>
   );
 }
 function Workspace() {
+  const { t, lang, setLang } = useI18n();
   const router = useRouter(),
     client = useQueryClient(),
     [tab, setTab] = useState("Overview"),
@@ -233,16 +280,13 @@ function Workspace() {
       </div>
     );
   if (!user) return null;
-  const visibleMenu = menu.filter(
-    (i) => user.admin || !["Team", "Settings", "Reports", "Expenses"].includes(i.name),
-  );
   return (
     <div className="app-shell">
       <div
         className={`mobile-overlay ${open ? "show" : ""}`}
         onClick={() => setOpen(false)}
       />
-      <aside className={`sidebar ${open ? "open" : ""}`}>
+      <aside className={`sidebar ${open ? "open" : ""}`} style={{ display: "flex", flexDirection: "column" }}>
         <div className="sidebar-brand">
           <span
             className="brand-mark"
@@ -290,18 +334,42 @@ function Workspace() {
             </span>
           </div>
         </div>
-        <div className="nav-label">WORKSPACE</div>
-        <nav aria-label="Primary navigation">
-          {visibleMenu.map(({ name, icon: Icon }) => (
-            <button
-              key={name}
-              className={`nav-item ${tab === name ? "active" : ""}`}
-              onClick={() => changeTab(name)}
-            >
-              <Icon size={19} />
-              {name}
-            </button>
-          ))}
+        <nav aria-label="Primary navigation" style={{ overflowY: "auto", flex: 1, paddingRight: 4 }}>
+          {menuGroups
+            .filter((grp) => !grp.adminOnly || user.admin)
+            .map((grp) => (
+              <div key={grp.titleEn} style={{ marginBottom: 12 }}>
+                <div
+                  className="nav-label"
+                  style={{
+                    padding: "6px 12px 3px",
+                    fontSize: 10,
+                    letterSpacing: "0.08em",
+                    color: "#819aab",
+                    fontWeight: 800,
+                  }}
+                >
+                  {lang === "si" ? grp.titleSi : grp.titleEn}
+                </div>
+                {grp.items
+                  .filter(
+                    (item) =>
+                      user.admin ||
+                      !["Team", "Settings", "Reports", "Expenses", "Document Center"].includes(item.name)
+                  )
+                  .map(({ name, labelEn, labelSi, icon: Icon }) => (
+                    <button
+                      key={name}
+                      className={`nav-item ${tab === name ? "active" : ""}`}
+                      onClick={() => changeTab(name)}
+                      style={{ padding: "8px 12px", fontSize: 13, gap: 10 }}
+                    >
+                      <Icon size={17} />
+                      <span>{lang === "si" ? labelSi : labelEn}</span>
+                    </button>
+                  ))}
+              </div>
+            ))}
         </nav>
         <div className="sidebar-bottom">
           <button
@@ -312,7 +380,7 @@ function Workspace() {
             }}
           >
             <LogOut size={19} />
-            Sign out
+            {lang === "si" ? "පද්ධතියෙන් ඉවත් වන්න" : "Sign out"}
           </button>
         </div>
       </aside>
@@ -331,12 +399,68 @@ function Workspace() {
                 {settings.data?.name || "NUGATHALAWA CEYLON TEA EXPORT"} ·
                 DISTRIBUTION ERP
               </span>
-              <h1>{tab}</h1>
+              <h1>
+                {(() => {
+                  for (const g of menuGroups) {
+                    const match = g.items.find((i) => i.name === tab);
+                    if (match) return lang === "si" ? match.labelSi : match.labelEn;
+                  }
+                  return tab;
+                })()}
+              </h1>
             </div>
           </div>
-          <div className="topbar-right">
+          <div className="topbar-right" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                background: "#f0fdf9",
+                border: "1px solid rgba(16, 165, 141, 0.25)",
+                borderRadius: 8,
+                padding: "2px 4px",
+                gap: 4,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setLang("si")}
+                style={{
+                  background: lang === "si" ? "#0e927d" : "transparent",
+                  color: lang === "si" ? "#fff" : "#10243a",
+                  border: 0,
+                  padding: "4px 8px",
+                  borderRadius: 6,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                සිංහල
+              </button>
+              <button
+                type="button"
+                onClick={() => setLang("en")}
+                style={{
+                  background: lang === "en" ? "#0e927d" : "transparent",
+                  color: lang === "en" ? "#fff" : "#10243a",
+                  border: 0,
+                  padding: "4px 8px",
+                  borderRadius: 6,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                EN
+              </button>
+            </div>
+            <NotificationBellAndDrawer
+              onViewInvoice={(id) => setInvoiceId(id)}
+              onViewCustomer={(id) => setCustomerAccountId(id)}
+            />
             <span className="muted" style={{ fontSize: 14 }}>
-              {user.name} · {user.admin ? "Admin" : "Sales Representative"}
+              {user.name} · {user.admin ? (lang === "si" ? "පරිපාලක" : "Admin") : (lang === "si" ? "නියෝජිත" : "Sales Rep")}
             </span>
             <span className="avatar" aria-label={user.name}>
               {user.name.slice(0, 1).toUpperCase()}
@@ -367,6 +491,19 @@ function Workspace() {
           )}
           {invoiceId && (
             <InvoiceActions id={invoiceId} close={() => setInvoiceId(null)} />
+          )}
+          {tab === "Smart POS" && (
+            <SmartPOSTerminal
+              products={products.data || []}
+              customers={customers.data || []}
+              stocks={stocks.data || []}
+              onInvoiceCreated={(id) => setInvoiceId(id)}
+            />
+          )}
+          {tab === "Document Center" && (
+            <DocumentCenterPanel
+              onViewInvoice={(id) => setInvoiceId(id)}
+            />
           )}{" "}
           {tab === "Overview" && (
             <>

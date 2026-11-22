@@ -34,6 +34,8 @@ export type Customer = {
   phone?: string;
   whatsapp?: string;
   credit_days: number;
+  owner_name?: string;
+  credit_limit_cents?: number;
 };
 export type Stock = {
   warehouse_id: string;
