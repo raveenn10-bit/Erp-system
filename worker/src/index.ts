@@ -22,6 +22,7 @@ import { asCents, dueDate, lineTotal, reminderDate, sumLines } from "./finance";
 import distributionRoutes from "./distribution";
 import creditAlertsRoutes, { processReminders } from "./credit-alerts";
 import { renderPublicInvoiceHtml } from "./public-invoice";
+import { reportsRouter } from "./reports";
 const app = new Hono<Env>();
 const safe = z.string().trim().min(1).max(180);
 const key = z.string().min(12).max(128);
@@ -242,6 +243,7 @@ app.get("/api/public/invoices/:token", async (c) => {
 app.use("/api/*", requireUser);
 app.route("/api", distributionRoutes);
 app.route("/api", creditAlertsRoutes);
+app.route("/api/reports", reportsRouter);
 app.get("/api/me", async (c) => c.json({ user: current(c) }));
 app.post("/api/logout", async (c) => {
   const token = c.req

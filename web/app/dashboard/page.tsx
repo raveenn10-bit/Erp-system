@@ -67,6 +67,7 @@ import {
 import { I18nProvider, useI18n } from "@/lib/i18n";
 import { SmartPOSTerminal } from "@/components/smart-pos";
 import { DocumentCenterPanel } from "@/components/document-center";
+import { AdvancedReportsDashboard } from "@/components/advanced-reports";
 type User = { id: string; name: string; admin: number; role_id: string };
 type Summary = {
   totalSalesCents: number;
@@ -901,7 +902,12 @@ function Workspace() {
               <CreditNotesPanel invoices={invoices.data || []} products={products.data || []} />
             </>
           )}
-          {tab === "Reports" && user.admin && <Reports />}
+          {tab === "Reports" && user.admin && (
+            <AdvancedReportsDashboard
+              onViewInvoice={(id) => setInvoiceId(id)}
+              onViewCustomer={(id) => setCustomerAccountId(id)}
+            />
+          )}
           {tab === "Team" && user.admin && (
             <>
               <Lead
@@ -1632,119 +1638,17 @@ function SettingsForm({
   );
 }
 
-function Reports() {
-  const [kind, setKind] = useState("daily-sales"),
-    [from, setFrom] = useState(
-      new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
-    ),
-    [to, setTo] = useState(new Date().toISOString().slice(0, 10));
-  const report = useQuery({
-    queryKey: ["report", kind, from, to],
-    queryFn: () =>
-      api<Record<string, string | number>[]>(
-        `/reports/${kind}?from=${from}&to=${to}`,
-      ),
-  });
-  function csv() {
-    const rows = report.data || [];
-    if (!rows.length) return;
-    const keys = Object.keys(rows[0]);
-    const escape = (v: unknown) => `"${String(v ?? "").replaceAll('"', '""')}"`;
-    const content = [
-      keys.map(escape).join(","),
-      ...rows.map((row) => keys.map((k) => escape(row[k])).join(",")),
-    ].join("\r\n");
-    const url = URL.createObjectURL(
-      new Blob([content], { type: "text/csv;charset=utf-8" }),
-    );
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${kind}-${from}-${to}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+function Reports({
+  onViewInvoice,
+  onViewCustomer,
+}: {
+  onViewInvoice?: (id: string) => void;
+  onViewCustomer?: (id: string) => void;
+}) {
   return (
-    <>
-      <Lead
-        title="Business reports"
-        subtitle="Live operational data, filtered by date and ready to export."
-      />
-      <div className="panel">
-        <div className="form-grid">
-          <label>
-            Report
-            <select value={kind} onChange={(e) => setKind(e.target.value)}>
-              {[
-                ["daily-sales", "Daily sales"],
-                ["product-sales", "Product sales & profit"],
-                ["outstanding", "Customer outstanding"],
-                ["collections", "Payment collections"],
-                ["stock-movements", "Stock movements"],
-              ].map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            From
-            <input
-              type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-            />
-          </label>
-          <label>
-            To
-            <input
-              type="date"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-            />
-          </label>
-        </div>
-        <div className="form-actions">
-          <button
-            className="secondary"
-            disabled={!report.data?.length}
-            onClick={csv}
-          >
-            <Download size={17} />
-            Export CSV
-          </button>
-        </div>
-      </div>
-      <div className="panel" style={{ marginTop: 20 }}>
-        {report.isLoading ? (
-          <div className="loader" />
-        ) : report.isError ? (
-          <div className="error">Could not load this report.</div>
-        ) : report.data?.length ? (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  {Object.keys(report.data[0]).map((k) => (
-                    <th key={k}>{k.replaceAll("_", " ")}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {report.data.map((row, i) => (
-                  <tr key={i}>
-                    {Object.values(row).map((v, j) => (
-                      <td key={j}>{v ?? "—"}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <Empty text="No records in this date range." />
-        )}
-      </div>
-    </>
+    <AdvancedReportsDashboard
+      onViewInvoice={onViewInvoice}
+      onViewCustomer={onViewCustomer}
+    />
   );
 }

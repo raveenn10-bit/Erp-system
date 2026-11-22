@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useRef } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Search,
@@ -477,8 +478,10 @@ export function SmartPOSTerminal({
               const inCart = cart.find((x) => x.variantId === p.variant_id);
 
               return (
-                <div
+                <motion.div
                   key={p.variant_id}
+                  whileHover={{ scale: 1.02, y: -2 }}
+                  whileTap={{ scale: 0.98 }}
                   onClick={() => addToCart(p)}
                   style={{
                     background: inCart ? "#f0fdf4" : "#ffffff",
@@ -486,7 +489,7 @@ export function SmartPOSTerminal({
                     borderRadius: "10px",
                     padding: "12px",
                     cursor: "pointer",
-                    transition: "all 0.15s ease",
+                    transition: "border-color 0.15s ease, background-color 0.15s ease",
                     display: "flex",
                     flexDirection: "column",
                     justifyContent: "space-between",
@@ -548,7 +551,7 @@ export function SmartPOSTerminal({
                       </span>
                     </div>
                   </div>
-                </div>
+                </motion.div>
               );
             })}
             {filteredProducts.length === 0 && (
