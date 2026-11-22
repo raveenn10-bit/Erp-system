@@ -1,0 +1,5 @@
+export function asCents(value:number){if(!Number.isSafeInteger(value)||value<0)throw new Error('Invalid cents');return value;}
+export function lineTotal(cents:number,quantity:number){asCents(cents);if(!Number.isSafeInteger(quantity)||quantity<=0)throw new Error('Invalid quantity');const total=cents*quantity;if(!Number.isSafeInteger(total))throw new Error('Amount too large');return total;}
+export function sumLines(lines:{unitPriceCents:number;quantity:number}[]){return lines.reduce((sum,line)=>{const next=sum+lineTotal(line.unitPriceCents,line.quantity);if(!Number.isSafeInteger(next))throw new Error('Amount too large');return next;},0);}
+export function dueDate(date:string,days:number){if(!Number.isInteger(days)||days<0||days>45)throw new Error('Credit days must be between 0 and 45');const iso=date.slice(0,10);const d=new Date(`${iso}T00:00:00Z`);if(Number.isNaN(d.getTime()))throw new Error('Invalid date');d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10);}
+export function reminderDate(due:string){const d=new Date(`${due}T00:00:00Z`);d.setUTCDate(d.getUTCDate()-14);return d.toISOString().slice(0,10);}

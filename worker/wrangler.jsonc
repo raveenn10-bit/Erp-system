@@ -1,0 +1,1 @@
+{"name":"sanjeewa-erp-api","main":"src/index.ts","compatibility_date":"2026-11-01","d1_databases":[{"binding":"DB","database_name":"sanjeewa-erp","database_id":"REPLACE_WITH_D1_DATABASE_ID","migrations_dir":"migrations"}],"vars":{"FRONTEND_ORIGIN":"http://localhost:3000"},"triggers":{"crons":["0 2 * * *"]}}

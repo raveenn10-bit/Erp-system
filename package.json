@@ -1,0 +1,1 @@
+{"name":"sanjeewa-distribution-erp","private":true,"workspaces":["web","worker"],"scripts":{"typecheck":"npm run typecheck -w worker && npm run typecheck -w web","test":"npm test -w worker","build":"npm run build -w web && npm run build -w worker"}}
