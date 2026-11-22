@@ -9,3 +9,5 @@ dist/
 .wrangler-dry-run/
 *.tsbuildinfo
 .DS_Store
+bootstrap-admin.ps1
+
