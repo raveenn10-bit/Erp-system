@@ -229,7 +229,10 @@ export function InvoiceActions({
           data && (
             <>
               <header className="invoice-doc-head">
-                <h2>{data.invoice.business_name}</h2>
+                <div style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 8}}>
+                  <img src="/nugathalawa-logo.jpg" alt="Logo" style={{width: 44, height: 44, borderRadius: '50%', objectFit: 'cover'}} />
+                  <h2 style={{margin: 0}}>{data.invoice.business_name}</h2>
+                </div>
                 <p>{data.invoice.business_address}</p>
                 <p>
                   {[
