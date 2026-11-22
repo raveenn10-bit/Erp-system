@@ -41,9 +41,17 @@ import {
   Users,
   Warehouse,
   X,
+  RotateCcw,
 } from "lucide-react";
 import { api, idempotency, money } from "@/lib/api";
 import { InvoiceActions } from "@/components/invoice-actions";
+import {
+  CustomerAccountModal,
+  ExpensesPanel,
+  CreditNotesPanel,
+  ChangePasswordPanel,
+  StockTransferPanel,
+} from "@/components/erp-panels";
 import {
   BillingPanel,
   BillingSettings,
@@ -110,6 +118,8 @@ const menu = [
   { name: "Free Issues", icon: Gift },
   { name: "Consignments", icon: PackageCheck },
   { name: "Payments", icon: CreditCard },
+  { name: "Expenses", icon: ArrowDownLeft },
+  { name: "Returns", icon: RotateCcw },
   { name: "Reports", icon: BarChart3 },
   { name: "Team", icon: Users },
   { name: "Settings", icon: Settings },
@@ -130,7 +140,8 @@ function Workspace() {
     [tab, setTab] = useState("Overview"),
     [open, setOpen] = useState(false),
     [toast, setToast] = useState(""),
-    [invoiceId, setInvoiceId] = useState<string | null>(null);
+    [invoiceId, setInvoiceId] = useState<string | null>(null),
+    [customerAccountId, setCustomerAccountId] = useState<string | null>(null);
   const reduced = useReducedMotion();
   const me = useQuery({
     queryKey: ["me"],
@@ -217,7 +228,7 @@ function Workspace() {
     );
   if (!user) return null;
   const visibleMenu = menu.filter(
-    (i) => user.admin || !["Team", "Settings"].includes(i.name),
+    (i) => user.admin || !["Team", "Settings", "Reports", "Expenses", "Returns"].includes(i.name),
   );
   return (
     <div className="app-shell">
@@ -338,6 +349,16 @@ function Workspace() {
           transition={{ duration: 0.24 }}
           className="main-section"
         >
+          {customerAccountId && (
+            <CustomerAccountModal
+              customerId={customerAccountId}
+              onClose={() => setCustomerAccountId(null)}
+              onViewInvoice={(id) => {
+                setCustomerAccountId(null);
+                setInvoiceId(id);
+              }}
+            />
+          )}
           {invoiceId && (
             <InvoiceActions id={invoiceId} close={() => setInvoiceId(null)} />
           )}{" "}
@@ -533,13 +554,23 @@ function Workspace() {
                         <th>Phone</th>
                         <th>Type</th>
                         <th>Credit terms</th>
+                        <th>Account</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(customers.data || []).map((c) => (
-                        <tr key={c.id}>
+                        <tr key={c.id} style={{ cursor: "pointer" }} onClick={() => setCustomerAccountId(c.id)}>
                           <td>
-                            <strong>{c.shop_name}</strong>
+                            <button
+                              type="button"
+                              className="link-button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCustomerAccountId(c.id);
+                              }}
+                            >
+                              <strong>{c.shop_name}</strong>
+                            </button>
                           </td>
                           <td>{c.owner_name}</td>
                           <td>{c.phone || "—"}</td>
@@ -547,6 +578,19 @@ function Workspace() {
                             <span className="badge">{c.type}</span>
                           </td>
                           <td>{c.credit_days} days</td>
+                          <td>
+                            <button
+                              type="button"
+                              className="secondary"
+                              style={{ padding: "4px 10px", fontSize: 11 }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCustomerAccountId(c.id);
+                              }}
+                            >
+                              Account
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -602,6 +646,16 @@ function Workspace() {
                 <FormPanel title="Stock adjustment">
                   <StockForm products={products.data || []} submit={submit} />
                 </FormPanel>
+              )}
+              {user.admin && (
+                <div style={{ marginTop: 20 }}>
+                  <div className="panel form-panel">
+                    <div className="panel-head">
+                      <h3>Stock transfers</h3>
+                    </div>
+                    <StockTransferPanel products={products.data || []} stocks={stocks.data || []} />
+                  </div>
+                </div>
               )}
             </>
           )}
@@ -673,6 +727,24 @@ function Workspace() {
               </FormPanel>
             </>
           )}
+          {tab === "Expenses" && (
+            <>
+              <Lead
+                title="Expenses & Cashbook"
+                subtitle="Record operational expenditures and monitor company cashflow."
+              />
+              <ExpensesPanel isAdmin={!!user.admin} />
+            </>
+          )}
+          {tab === "Returns" && (
+            <>
+              <Lead
+                title="Sales Returns & Credit Notes"
+                subtitle="Issue credit notes for returned stock and adjust balances."
+              />
+              <CreditNotesPanel invoices={invoices.data || []} products={products.data || []} />
+            </>
+          )}
           {tab === "Reports" && user.admin && <Reports />}
           {tab === "Team" && user.admin && (
             <>
@@ -742,6 +814,9 @@ function Workspace() {
               <FormPanel title="Invoice print settings">
                 <BillingSettings />
               </FormPanel>
+              <div style={{ marginTop: 20 }}>
+                <ChangePasswordPanel />
+              </div>
             </>
           )}
         </motion.div>

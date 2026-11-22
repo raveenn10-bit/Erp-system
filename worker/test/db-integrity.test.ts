@@ -43,10 +43,10 @@ describe('SQLite constraint and migration integrity', () => {
 
     // Valid invoice
     db.prepare(invoiceSql).run('inv', 'SD-2', 'c', 'admin', 'main', 10000, 4000, 'posted', '2026-12-22', 'k2', now, null, 10000, 0, 0, 'cash', '', '', '', 'sale', null);
-    db.prepare('INSERT INTO payments VALUES(?,?,?,?,?,?,?)').run('pay', 'inv', 4000, 'cash', 'pay-key', 'admin', now);
+    db.prepare('INSERT INTO payments(id,invoice_id,amount_cents,method,idempotency_key,created_by,created_at) VALUES(?,?,?,?,?,?,?)').run('pay', 'inv', 4000, 'cash', 'pay-key', 'admin', now);
 
     // Overpayment rejected
-    rejects(() => db.prepare('INSERT INTO payments VALUES(?,?,?,?,?,?,?)').run('pay2', 'inv', 1, 'cash', 'pay-key-2', 'admin', now));
+    rejects(() => db.prepare('INSERT INTO payments(id,invoice_id,amount_cents,method,idempotency_key,created_by,created_at) VALUES(?,?,?,?,?,?,?)').run('pay2', 'inv', 1, 'cash', 'pay-key-2', 'admin', now));
 
     // Invoice immutability trigger
     rejects(() => db.prepare('UPDATE invoices SET total_cents=1 WHERE id=?').run('inv'));
