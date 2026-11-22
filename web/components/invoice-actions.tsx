@@ -139,13 +139,16 @@ export function InvoiceActions({id,close}:{id:string;close:()=>void}){
           <>
             <div className="invoice-header" style={{marginBottom: 16, borderBottom: '1px solid #e2e8f0', paddingBottom: 12}}>
               <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12}}>
-                <div>
-                  <h2 style={{fontSize: 20, fontWeight: 700, margin: 0, color: '#0f172a'}}>{data.invoice.business_name}</h2>
-                  <p className="muted" style={{margin: '4px 0 2px', fontSize: 13}}>{data.invoice.business_address}</p>
-                  <p className="muted" style={{margin: '2px 0', fontSize: 13}}>
-                    Hotline: {data.invoice.business_phone || '076 661 5492'} · Admin / WhatsApp: {data.invoice.business_whatsapp || '076 696 5493'}
-                    {data.invoice.business_email && ` · Email: ${data.invoice.business_email}`}
-                  </p>
+                <div style={{display: 'flex', alignItems: 'center', gap: 14}}>
+                  <img src="/nugathalawa-logo.jpg" alt="Logo" style={{width: 52, height: 52, borderRadius: '50%', objectFit: 'cover', border: '1px solid #e2e8f0'}} />
+                  <div>
+                    <h2 style={{fontSize: 20, fontWeight: 700, margin: 0, color: '#0f172a'}}>{data.invoice.business_name}</h2>
+                    <p className="muted" style={{margin: '4px 0 2px', fontSize: 13}}>{data.invoice.business_address}</p>
+                    <p className="muted" style={{margin: '2px 0', fontSize: 13}}>
+                      Hotline: {data.invoice.business_phone || '076 661 5492'} · Admin / WhatsApp: {data.invoice.business_whatsapp || '076 696 5493'}
+                      {data.invoice.business_email && ` · Email: ${data.invoice.business_email}`}
+                    </p>
+                  </div>
                 </div>
                 <div style={{textAlign: 'right'}}>
                   <span className="eyebrow" style={{display: 'inline-block', background: '#0e927d1a', color: '#0e927d', padding: '3px 8px', borderRadius: 6, fontWeight: 700, fontSize: 12}}>
