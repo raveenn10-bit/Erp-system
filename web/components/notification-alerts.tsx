@@ -96,10 +96,10 @@ export type CreditAlertSettings = {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function PriorityBadge({ priority }: { priority: string }) {
   const styles: Record<string, { bg: string; text: string; label: string }> = {
-    urgent: { bg: "#fee2e2", text: "#991b1b", label: "අත්‍යවශ්‍ය (Urgent)" },
-    high: { bg: "#ffedd5", text: "#9a3412", label: "ඉහළ (High)" },
-    medium: { bg: "#fef9c3", text: "#854d0e", label: "මධ්‍යම (Medium)" },
-    low: { bg: "#f1f5f9", text: "#475569", label: "සාමාන්‍ය (Low)" },
+    urgent: { bg: "var(--danger-soft)", text: "var(--danger-strong)", label: "අත්‍යවශ්‍ය (Urgent)" },
+    high: { bg: "var(--warning-soft)", text: "var(--warning-strong)", label: "ඉහළ (High)" },
+    medium: { bg: "var(--warning-soft)", text: "var(--warning-strong)", label: "මධ්‍යම (Medium)" },
+    low: { bg: "var(--surface-muted)", text: "var(--brand-text-muted)", label: "සාමාන්‍ය (Low)" },
   };
   const s = styles[priority] || styles.medium;
   return (
@@ -182,11 +182,11 @@ export function NotificationBellAndDrawer({
           height: 38,
           borderRadius: "50%",
           padding: 0,
-          border: unreadCount > 0 ? "1.5px solid var(--brand-primary,#0e927d)" : "1px solid var(--border,#e2e8f0)",
-          background: unreadCount > 0 ? "var(--surface-raised,#f0fdf4)" : "var(--surface,#fff)",
+          border: unreadCount > 0 ? "1.5px solid var(--brand-primary)" : "1px solid var(--border)",
+          background: unreadCount > 0 ? "var(--surface-raised)" : "var(--surface)",
         }}
       >
-        <Bell size={18} color={unreadCount > 0 ? "var(--brand-primary,#0e927d)" : "currentColor"} />
+        <Bell size={18} style={{ color: unreadCount > 0 ? "var(--brand-primary)" : "currentColor" }} />
         {unreadCount > 0 && (
           <span
             style={{
@@ -197,7 +197,7 @@ export function NotificationBellAndDrawer({
               height: 18,
               padding: "0 4px",
               borderRadius: 9,
-              background: "#ef4444",
+              background: "var(--danger)",
               color: "#fff",
               fontSize: 10,
               fontWeight: 800,
@@ -231,7 +231,7 @@ export function NotificationBellAndDrawer({
               width: "100%",
               maxWidth: 460,
               height: "100%",
-              background: "var(--surface,#fff)",
+              background: "var(--surface)",
               boxShadow: "-8px 0 32px rgba(0,0,0,0.15)",
               display: "flex",
               flexDirection: "column",
@@ -245,15 +245,15 @@ export function NotificationBellAndDrawer({
                 alignItems: "center",
                 justifyContent: "space-between",
                 padding: "18px 20px",
-                borderBottom: "1.5px solid var(--border,#e2e8f0)",
-                background: "var(--surface-raised,#f8fafc)",
+                borderBottom: "1.5px solid var(--border)",
+                background: "var(--surface-raised)",
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Bell size={20} color="var(--brand-primary,#0e927d)" />
+                <Bell size={20} style={{ color: "var(--brand-primary)" }} />
                 <div>
                   <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>දැනුම්දීම් (Notifications)</h3>
-                  <span style={{ fontSize: 11, color: "var(--muted,#64748b)" }}>
+                  <span style={{ fontSize: 11, color: "var(--muted)" }}>
                     නොකියවූ {unreadCount} ක් ඇත
                   </span>
                 </div>
@@ -287,8 +287,8 @@ export function NotificationBellAndDrawer({
                 display: "flex",
                 gap: 6,
                 padding: "10px 16px",
-                borderBottom: "1px solid var(--border,#e2e8f0)",
-                background: "var(--surface,#fff)",
+                borderBottom: "1px solid var(--border)",
+                background: "var(--surface)",
                 overflowX: "auto",
               }}
             >
@@ -308,8 +308,8 @@ export function NotificationBellAndDrawer({
                     border: "none",
                     fontSize: 11,
                     fontWeight: filter === k ? 700 : 500,
-                    background: filter === k ? "var(--brand-primary,#0e927d)" : "var(--surface-raised,#f1f5f9)",
-                    color: filter === k ? "#fff" : "var(--muted,#475569)",
+                    background: filter === k ? "var(--brand-primary)" : "var(--surface-raised)",
+                    color: filter === k ? "#fff" : "var(--muted)",
                     cursor: "pointer",
                     whiteSpace: "nowrap",
                   }}
@@ -335,10 +335,10 @@ export function NotificationBellAndDrawer({
                   <div
                     key={item.id}
                     style={{
-                      background: isUnread ? "var(--surface-raised,#f8fafc)" : "var(--surface,#fff)",
-                      border: isUnread ? "1.5px solid var(--brand-primary,#0e927d)" : "1px solid var(--border,#e2e8f0)",
+                      background: isUnread ? "var(--surface-raised)" : "var(--surface)",
+                      border: isUnread ? "1.5px solid var(--brand-primary)" : "1px solid var(--border)",
                       borderLeftWidth: 4,
-                      borderLeftColor: isOverdue ? "#dc2626" : "var(--brand-primary,#0e927d)",
+                      borderLeftColor: isOverdue ? "var(--danger)" : "var(--brand-primary)",
                       borderRadius: 10,
                       padding: "12px 14px",
                       marginBottom: 10,
@@ -351,8 +351,8 @@ export function NotificationBellAndDrawer({
                         {isOverdue && (
                           <span
                             style={{
-                              background: "#fee2e2",
-                              color: "#dc2626",
+                              background: "var(--danger-soft)",
+                              color: "var(--danger)",
                               fontSize: 10,
                               fontWeight: 700,
                               padding: "2px 6px",
@@ -363,7 +363,7 @@ export function NotificationBellAndDrawer({
                           </span>
                         )}
                       </div>
-                      <span style={{ fontSize: 10, color: "var(--muted,#64748b)" }}>
+                      <span style={{ fontSize: 10, color: "var(--muted)" }}>
                         {item.created_at.slice(0, 16).replace("T", " ")}
                       </span>
                     </div>
@@ -372,7 +372,7 @@ export function NotificationBellAndDrawer({
                       {item.shop_name}
                     </div>
 
-                    <div style={{ fontSize: 12, lineHeight: 1.4, color: "var(--text,#1e293b)", marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, lineHeight: 1.4, color: "var(--text)", marginBottom: 8 }}>
                       {item.body}
                     </div>
 
@@ -382,15 +382,15 @@ export function NotificationBellAndDrawer({
                         alignItems: "center",
                         justifyContent: "space-between",
                         fontSize: 11,
-                        color: "var(--muted,#64748b)",
+                        color: "var(--muted)",
                         marginBottom: 10,
                         padding: "6px 8px",
-                        background: "var(--surface-raised,#f1f5f9)",
+                        background: "var(--surface-raised)",
                         borderRadius: 6,
                       }}
                     >
                       <span>බිල්පත: <strong>{item.invoice_number}</strong></span>
-                      <span>හිඟ මුදල: <strong style={{ color: isOverdue ? "#dc2626" : "inherit" }}>{money(item.outstanding_cents)}</strong></span>
+                      <span>හිඟ මුදල: <strong style={{ color: isOverdue ? "var(--danger)" : "inherit" }}>{money(item.outstanding_cents)}</strong></span>
                       <span>නියමිත: <strong>{item.due_at || "—"}</strong></span>
                     </div>
 
@@ -427,7 +427,7 @@ export function NotificationBellAndDrawer({
                       <button
                         type="button"
                         className="secondary"
-                        style={{ padding: "4px 8px", fontSize: 11, gap: 4, color: "#059669" }}
+                        style={{ padding: "4px 8px", fontSize: 11, gap: 4, color: "var(--success)" }}
                         onClick={() => setActiveWhatsAppModal(item)}
                       >
                         <MessageCircle size={13} /> WhatsApp
@@ -449,8 +449,8 @@ export function NotificationBellAndDrawer({
               })}
 
               {!query.isLoading && items.length === 0 && (
-                <div style={{ padding: "60px 20px", textAlign: "center", color: "var(--muted,#64748b)" }}>
-                  <CheckCircle size={32} color="#10b981" style={{ margin: "0 auto 10px" }} />
+                <div style={{ padding: "60px 20px", textAlign: "center", color: "var(--muted)" }}>
+                  <CheckCircle size={32} style={{ color: "var(--success)", margin: "0 auto 10px" }} />
                   <div style={{ fontWeight: 700, fontSize: 14 }}>කිසිදු දැනුම්දීමක් නොමැත</div>
                   <div style={{ fontSize: 12, marginTop: 4 }}>සියලු ණය ගෙවීම් යාවත්කාලීනයි</div>
                 </div>
@@ -559,7 +559,7 @@ Nugathalawa Ceylon Tea Export (Pvt) Ltd`;
     >
       <div
         style={{
-          background: "var(--surface,#fff)",
+          background: "var(--surface)",
           borderRadius: 14,
           width: "100%",
           maxWidth: 480,
@@ -573,12 +573,12 @@ Nugathalawa Ceylon Tea Export (Pvt) Ltd`;
             alignItems: "center",
             justifyContent: "space-between",
             padding: "16px 20px",
-            borderBottom: "1px solid var(--border,#e2e8f0)",
-            background: "var(--surface-raised,#f8fafc)",
+            borderBottom: "1px solid var(--border)",
+            background: "var(--surface-raised)",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <MessageCircle size={20} color="#059669" />
+            <MessageCircle size={20} style={{ color: "var(--success)" }} />
             <strong style={{ fontSize: 15 }}>WhatsApp මතක් කිරීම (Payment Reminder)</strong>
           </div>
           <button type="button" className="secondary" onClick={onClose} style={{ width: 30, height: 30, padding: 0 }}>
@@ -590,8 +590,8 @@ Nugathalawa Ceylon Tea Export (Pvt) Ltd`;
           {error && (
             <div
               style={{
-                background: "#fee2e2",
-                color: "#991b1b",
+                background: "var(--danger-soft)",
+                color: "var(--danger-strong)",
                 padding: "8px 12px",
                 borderRadius: 6,
                 fontSize: 12,
@@ -638,7 +638,7 @@ Nugathalawa Ceylon Tea Export (Pvt) Ltd`;
               className="primary"
               onClick={sendReminder}
               disabled={loading}
-              style={{ background: "#059669", gap: 6 }}
+              style={{ background: "var(--success)", gap: 6 }}
             >
               <Send size={15} />
               {loading ? "සූදානම් වෙමින්…" : "WhatsApp වෙත යවන්න"}
@@ -715,8 +715,8 @@ export function CreditAlertsDashboardPanel({
       {flash && (
         <div
           style={{
-            background: flash.includes("✓") ? "#d1fae5" : "#fee2e2",
-            color: flash.includes("✓") ? "#065f46" : "#991b1b",
+            background: flash.includes("✓") ? "var(--success-soft)" : "var(--danger-soft)",
+            color: flash.includes("✓") ? "var(--success-strong)" : "var(--danger-strong)",
             padding: "10px 20px",
             borderRadius: 8,
             marginBottom: 16,
@@ -742,14 +742,14 @@ export function CreditAlertsDashboardPanel({
           <strong>{money(stats?.totalOutstandingCents || 0)}</strong>
         </div>
 
-        <div className="stat-card alert" style={{ borderColor: "#dc2626" }}>
-          <small style={{ color: "#dc2626" }}>ප්‍රමාද වූ ණය (Overdue)</small>
-          <strong style={{ color: "#dc2626" }}>{money(stats?.overdueCents || 0)}</strong>
+        <div className="stat-card alert" style={{ borderColor: "var(--danger)" }}>
+          <small style={{ color: "var(--danger)" }}>ප්‍රමාද වූ ණය (Overdue)</small>
+          <strong style={{ color: "var(--danger)" }}>{money(stats?.overdueCents || 0)}</strong>
         </div>
 
-        <div className="stat-card" style={{ borderColor: "#ea580c" }}>
-          <small style={{ color: "#ea580c" }}>අද ගෙවිය යුතු (Due Today)</small>
-          <strong style={{ color: "#ea580c" }}>{money(stats?.dueTodayCents || 0)}</strong>
+        <div className="stat-card" style={{ borderColor: "var(--warning)" }}>
+          <small style={{ color: "var(--warning)" }}>අද ගෙවිය යුතු (Due Today)</small>
+          <strong style={{ color: "var(--warning)" }}>{money(stats?.dueTodayCents || 0)}</strong>
         </div>
 
         <div className="stat-card">
@@ -762,9 +762,9 @@ export function CreditAlertsDashboardPanel({
           <strong>{money(stats?.dueWithin14DaysCents || 0)}</strong>
         </div>
 
-        <div className="stat-card" style={{ borderColor: "#e11d48" }}>
-          <small style={{ color: "#e11d48" }}>අධි අවදානම් පාරිභෝගිකයින්</small>
-          <strong style={{ color: "#e11d48" }}>{stats?.highRiskCount || 0}</strong>
+        <div className="stat-card" style={{ borderColor: "var(--danger)" }}>
+          <small style={{ color: "var(--danger)" }}>අධි අවදානම් පාරිභෝගිකයින්</small>
+          <strong style={{ color: "var(--danger)" }}>{stats?.highRiskCount || 0}</strong>
         </div>
 
         <div className="stat-card">
@@ -777,7 +777,7 @@ export function CreditAlertsDashboardPanel({
       <div className="panel" style={{ marginBottom: 16, padding: "14px 18px" }}>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 260 }}>
-            <Search size={16} color="var(--muted,#64748b)" />
+            <Search size={16} style={{ color: "var(--muted)" }} />
             <input
               type="text"
               placeholder="කඩේ නම, අයිතිකරු හෝ බිල්පත් අංකය සොයන්න..."
@@ -806,8 +806,8 @@ export function CreditAlertsDashboardPanel({
                   fontWeight: statusFilter === k ? 700 : 500,
                   border: "none",
                   cursor: "pointer",
-                  background: statusFilter === k ? "var(--brand-primary,#0e927d)" : "var(--surface-raised,#f1f5f9)",
-                  color: statusFilter === k ? "#fff" : "var(--muted,#475569)",
+                  background: statusFilter === k ? "var(--brand-primary)" : "var(--surface-raised)",
+                  color: statusFilter === k ? "#fff" : "var(--muted)",
                 }}
               >
                 {label}
@@ -873,7 +873,7 @@ export function CreditAlertsDashboardPanel({
                       <div>
                         <strong>{item.shop_name}</strong>
                       </div>
-                      <div style={{ fontSize: 11, color: "var(--muted,#64748b)" }}>
+                      <div style={{ fontSize: 11, color: "var(--muted)" }}>
                         {item.owner_name} {item.target_phone ? `· ${item.target_phone}` : ""}
                       </div>
                     </td>
@@ -884,7 +884,7 @@ export function CreditAlertsDashboardPanel({
                         style={{
                           fontSize: 11,
                           fontWeight: 700,
-                          color: isOverdue ? "#dc2626" : item.days_diff === 0 ? "#ea580c" : "var(--muted,#64748b)",
+                          color: isOverdue ? "var(--danger)" : item.days_diff === 0 ? "var(--warning)" : "var(--muted)",
                         }}
                       >
                         {isOverdue
@@ -898,8 +898,8 @@ export function CreditAlertsDashboardPanel({
                       {item.is_high_risk ? (
                         <span
                           style={{
-                            background: "#fee2e2",
-                            color: "#dc2626",
+                            background: "var(--danger-soft)",
+                            color: "var(--danger)",
                             padding: "2px 8px",
                             borderRadius: 99,
                             fontSize: 10,
@@ -916,7 +916,7 @@ export function CreditAlertsDashboardPanel({
                         <span className="badge">ක්‍රියාකාරී</span>
                       )}
                     </td>
-                    <td style={{ color: isOverdue ? "#dc2626" : "inherit", fontWeight: 800 }}>
+                    <td style={{ color: isOverdue ? "var(--danger)" : "inherit", fontWeight: 800 }}>
                       {money(item.outstanding_cents)}
                     </td>
                     <td>
@@ -927,7 +927,7 @@ export function CreditAlertsDashboardPanel({
                         <button
                           type="button"
                           className="secondary"
-                          style={{ padding: "4px 8px", fontSize: 11, color: "#059669", gap: 3 }}
+                          style={{ padding: "4px 8px", fontSize: 11, color: "var(--success)", gap: 3 }}
                           onClick={() => setActiveWhatsAppModal(item)}
                           title="WhatsApp මතක් කිරීමක් යවන්න"
                         >
@@ -952,7 +952,7 @@ export function CreditAlertsDashboardPanel({
           </table>
 
           {filteredAlerts.length === 0 && (
-            <div style={{ padding: "40px", textAlign: "center", color: "var(--muted,#64748b)" }}>
+            <div style={{ padding: "40px", textAlign: "center", color: "var(--muted)" }}>
               {query.isLoading ? "පූරණය වෙමින් පවතී…" : "සෙවුමට ගැළපෙන ණය මතක් කිරීම් නොමැත."}
             </div>
           )}
@@ -1045,8 +1045,8 @@ export function CreditAlertSettingsPanel() {
       {flash && (
         <div
           style={{
-            background: flash.includes("✓") ? "#d1fae5" : "#fee2e2",
-            color: flash.includes("✓") ? "#065f46" : "#991b1b",
+            background: flash.includes("✓") ? "var(--success-soft)" : "var(--danger-soft)",
+            color: flash.includes("✓") ? "var(--success-strong)" : "var(--danger-strong)",
             padding: "10px 16px",
             borderRadius: 8,
             marginBottom: 16,
@@ -1076,7 +1076,7 @@ export function CreditAlertSettingsPanel() {
               placeholder="14,7,3,0"
               required
             />
-            <span style={{ fontSize: 11, color: "var(--muted,#64748b)" }}>
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>
               කොමා මගින් වෙන් කරන්න (උදා: 14, 7, 3, 0)
             </span>
           </label>
@@ -1091,7 +1091,7 @@ export function CreditAlertSettingsPanel() {
               defaultValue={s?.overdue_frequency_days || 7}
               required
             />
-            <span style={{ fontSize: 11, color: "var(--muted,#64748b)" }}>
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>
               දින කීයකට වරක්ද (උදා: දින 7 කට වරක්)
             </span>
           </label>
@@ -1136,7 +1136,7 @@ export function CreditAlertSettingsPanel() {
             defaultValue={s?.whatsapp_template || ""}
             style={{ width: "100%", fontSize: 12, lineHeight: 1.5, fontFamily: "inherit" }}
           />
-          <div style={{ fontSize: 11, color: "var(--muted,#64748b)", marginTop: 4 }}>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
             භාවිත කළ හැකි ටෝකන: <code>{"{shop_name}"}</code>, <code>{"{invoice_number}"}</code>,{" "}
             <code>{"{outstanding}"}</code>, <code>{"{due_date}"}</code>
           </div>
@@ -1150,7 +1150,7 @@ export function CreditAlertSettingsPanel() {
       </form>
 
       {/* Scheduler Execution Logs */}
-      <div style={{ marginTop: 32, borderTop: "1px solid var(--border,#e2e8f0)", paddingTop: 20 }}>
+      <div style={{ marginTop: 32, borderTop: "1px solid var(--border)", paddingTop: 20 }}>
         <h4 style={{ margin: "0 0 10px", fontSize: 14 }}>පසුගිය ස්වයංක්‍රීය ධාවන සටහන් (Scheduler Execution Logs)</h4>
         <div className="table-wrap">
           <table className="data-table" style={{ fontSize: 12 }}>
@@ -1180,7 +1180,7 @@ export function CreditAlertSettingsPanel() {
             </tbody>
           </table>
           {!logsQuery.data?.length && (
-            <div style={{ padding: 16, textAlign: "center", color: "var(--muted,#64748b)" }}>
+            <div style={{ padding: 16, textAlign: "center", color: "var(--muted)" }}>
               ධාවන සටහන් තවමත් නොමැත.
             </div>
           )}

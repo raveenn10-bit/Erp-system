@@ -63,10 +63,10 @@ type Invoice = {
 // ═══════════════════════════════════════════════════════════════
 function Badge({ text, variant = "default" }: { text: string; variant?: "default"|"success"|"danger"|"warning" }) {
   const colors: Record<string, string> = {
-    default: "var(--surface-raised,#f1f5f5)",
-    success: "#d1fae5",
-    danger: "#fee2e2",
-    warning: "#fef9c3",
+    default: "var(--surface-raised)",
+    success: "var(--success-soft)",
+    danger: "var(--danger-soft)",
+    warning: "var(--warning-soft)",
   };
   return (
     <span style={{
@@ -79,7 +79,7 @@ function Badge({ text, variant = "default" }: { text: string; variant?: "default
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "24px 0 10px", fontWeight: 700, fontSize: 14, color: "var(--brand-primary,#0e927d)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "24px 0 10px", fontWeight: 700, fontSize: 14, color: "var(--brand-primary)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
       {children}
     </div>
   );
@@ -88,13 +88,13 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 function StatCard({ label, value, sub, alert }: { label: string; value: string; sub?: string; alert?: boolean }) {
   return (
     <div style={{
-      background: alert ? "#fff5f5" : "var(--surface-raised,#f8fbfb)",
-      border: `1.5px solid ${alert ? "#fca5a5" : "var(--border,#e5ecec)"}`,
+      background: alert ? "var(--danger-soft)" : "var(--surface-raised)",
+      border: `1.5px solid ${alert ? "var(--danger-line)" : "var(--border)"}`,
       borderRadius: 12, padding: "14px 18px", minWidth: 0,
     }}>
-      <div style={{ fontSize: 11, color: alert ? "#dc2626" : "var(--muted,#64748b)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 800, color: alert ? "#dc2626" : "var(--brand-primary,#0e927d)" }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: "var(--muted,#64748b)", marginTop: 2 }}>{sub}</div>}
+      <div style={{ fontSize: 11, color: alert ? "var(--danger)" : "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 800, color: alert ? "var(--danger)" : "var(--brand-primary)" }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }
@@ -205,16 +205,16 @@ export function CustomerAccountModal({
       padding: 16,
     }}>
       <div style={{
-        background: "var(--surface,#fff)", borderRadius: 18, width: "100%", maxWidth: 900,
+        background: "var(--surface)", borderRadius: 18, width: "100%", maxWidth: 900,
         maxHeight: "92vh", overflow: "hidden", display: "flex", flexDirection: "column",
         boxShadow: "0 24px 80px rgba(0,0,0,0.25)",
       }}>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "18px 24px", borderBottom: "1.5px solid var(--border,#e5ecec)", background: "var(--surface-raised,#f8fbfb)" }}>
-          <Building2 size={22} color="var(--brand-primary,#0e927d)" />
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "18px 24px", borderBottom: "1.5px solid var(--border)", background: "var(--surface-raised)" }}>
+          <Building2 size={22} style={{ color: "var(--brand-primary)" }} />
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 18, fontWeight: 800 }}>{c?.shop_name || "Customer Account"}</div>
-            <div style={{ fontSize: 12, color: "var(--muted,#64748b)" }}>{c?.owner_name} · {c?.type}</div>
+            <div style={{ fontSize: 12, color: "var(--muted)" }}>{c?.owner_name} · {c?.type}</div>
           </div>
           <button className="secondary" style={{ gap: 6 }} onClick={downloadStatement}>
             <Download size={15} /> Statement
@@ -226,7 +226,7 @@ export function CustomerAccountModal({
         </div>
 
         {flash && (
-          <div style={{ background: flash.includes("✓") ? "#d1fae5" : "#fee2e2", color: flash.includes("✓") ? "#065f46" : "#991b1b", padding: "10px 24px", fontSize: 13, fontWeight: 600 }}>{flash}</div>
+          <div style={{ background: flash.includes("✓") ? "var(--success-soft)" : "var(--danger-soft)", color: flash.includes("✓") ? "var(--success-strong)" : "var(--danger-strong)", padding: "10px 24px", fontSize: 13, fontWeight: 600 }}>{flash}</div>
         )}
 
         {account.isLoading && <div style={{ padding: 40, textAlign: "center" }}><div className="loader" /></div>}
@@ -235,7 +235,7 @@ export function CustomerAccountModal({
           <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
             {/* Edit panel */}
             {editMode && (
-              <div style={{ background: "var(--surface-raised,#f8fbfb)", border: "1.5px solid var(--border,#e5ecec)", borderRadius: 12, padding: 20, marginBottom: 20, display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 12, alignItems: "end" }}>
+              <div className="resp-grid" style={{ background: "var(--surface-raised)", border: "1.5px solid var(--border)", borderRadius: 12, padding: 20, marginBottom: 20, display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 12, alignItems: "end" }}>
                 <label>WhatsApp<input value={editWhatsapp} onChange={e => setEditWhatsapp(e.target.value)} placeholder="+94771234567" style={{ display: "block", marginTop: 4 }} /></label>
                 <label>Credit Limit (LKR)<input type="number" value={editCreditLimit} onChange={e => setEditCreditLimit(e.target.value)} min="0" style={{ display: "block", marginTop: 4 }} /></label>
                 <label>Credit Days (max 45)<input type="number" value={editCreditDays} onChange={e => setEditCreditDays(e.target.value)} min="0" max="45" style={{ display: "block", marginTop: 4 }} /></label>
@@ -251,7 +251,7 @@ export function CustomerAccountModal({
                 { icon: <MapPin size={13} />, val: c?.address || "—" },
                 { icon: <Calendar size={13} />, val: `Credit: ${c?.credit_days} days` },
               ].map((item, i) => (
-                <span key={i} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--muted,#64748b)" }}>
+                <span key={i} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--muted)" }}>
                   {item.icon} {item.val}
                 </span>
               ))}
@@ -269,9 +269,9 @@ export function CustomerAccountModal({
 
             {/* Quick payment */}
             {data.summary.outstanding > 0 && (
-              <div style={{ background: "#f0fdf4", border: "1.5px solid #bbf7d0", borderRadius: 12, padding: 16, marginBottom: 24 }}>
-                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, color: "#065f46" }}>⚡ Receive Payment</div>
-                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
+              <div style={{ background: "var(--success-soft)", border: "1.5px solid var(--success-line)", borderRadius: 12, padding: 16, marginBottom: 24 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, color: "var(--success-strong)" }}>⚡ Receive Payment</div>
+                <div className="resp-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
                   <label style={{ fontSize: 12 }}>Invoice
                     <select value={payInvoiceId} onChange={e => setPayInvoiceId(e.target.value)} style={{ display: "block", marginTop: 4 }}>
                       <option value="">Select invoice</option>
@@ -301,7 +301,7 @@ export function CustomerAccountModal({
             )}
 
             {/* Tabs */}
-            <div style={{ display: "flex", gap: 4, borderBottom: "1.5px solid var(--border,#e5ecec)", marginBottom: 16 }}>
+            <div style={{ display: "flex", gap: 4, borderBottom: "1.5px solid var(--border)", marginBottom: 16 }}>
               {([
                 ["ledger", "Ledger", <History size={13} />],
                 ["invoices", `Invoices (${data.invoices.length})`, <FileText size={13} />],
@@ -316,8 +316,8 @@ export function CustomerAccountModal({
                     display: "flex", alignItems: "center", gap: 5,
                     padding: "8px 14px", border: "none", background: "none", cursor: "pointer",
                     fontSize: 12, fontWeight: activeTab === k ? 700 : 500,
-                    color: activeTab === k ? "var(--brand-primary,#0e927d)" : "var(--muted,#64748b)",
-                    borderBottom: activeTab === k ? "2.5px solid var(--brand-primary,#0e927d)" : "2.5px solid transparent",
+                    color: activeTab === k ? "var(--brand-primary)" : "var(--muted)",
+                    borderBottom: activeTab === k ? "2.5px solid var(--brand-primary)" : "2.5px solid transparent",
                     marginBottom: -1.5,
                   }}
                 >{icon} {label}</button>
@@ -337,15 +337,15 @@ export function CustomerAccountModal({
                         <td>{e.date.slice(0, 10)}</td>
                         <td><Badge text={e.type} variant={e.type === "payment" || e.type === "credit_note" ? "success" : "default"} /></td>
                         <td><strong>{e.ref}</strong></td>
-                        <td style={{ color: e.debit ? "#dc2626" : "inherit" }}>{e.debit ? money(e.debit) : "—"}</td>
-                        <td style={{ color: e.credit ? "#059669" : "inherit" }}>{e.credit ? money(e.credit) : "—"}</td>
-                        <td style={{ fontWeight: 700, color: e.balance > 0 ? "#dc2626" : "#059669" }}>{money(e.balance)}</td>
-                        <td style={{ fontSize: 12, color: "var(--muted,#64748b)" }}>{e.note}</td>
+                        <td style={{ color: e.debit ? "var(--danger)" : "inherit" }}>{e.debit ? money(e.debit) : "—"}</td>
+                        <td style={{ color: e.credit ? "var(--success)" : "inherit" }}>{e.credit ? money(e.credit) : "—"}</td>
+                        <td style={{ fontWeight: 700, color: e.balance > 0 ? "var(--danger)" : "var(--success)" }}>{money(e.balance)}</td>
+                        <td style={{ fontSize: 12, color: "var(--muted)" }}>{e.note}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                {!data.ledger.length && <div style={{ padding: "30px", textAlign: "center", color: "var(--muted,#64748b)", fontSize: 13 }}>No transactions yet.</div>}
+                {!data.ledger.length && <div style={{ padding: "30px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>No transactions yet.</div>}
               </div>
             )}
 
@@ -360,7 +360,7 @@ export function CustomerAccountModal({
                         <td><strong>{inv.number}</strong></td>
                         <td>{money(inv.total_cents)}</td>
                         <td>{money(inv.paid_cents)}</td>
-                        <td style={{ color: inv.total_cents > inv.paid_cents ? "#dc2626" : "inherit" }}>{money(inv.total_cents - inv.paid_cents)}</td>
+                        <td style={{ color: inv.total_cents > inv.paid_cents ? "var(--danger)" : "inherit" }}>{money(inv.total_cents - inv.paid_cents)}</td>
                         <td>{inv.due_at || "—"}</td>
                         <td><Badge text={inv.status} variant={inv.status === "posted" && inv.total_cents > inv.paid_cents ? "warning" : "success"} /></td>
                         <td><button className="secondary" style={{ padding: "4px 10px", fontSize: 11 }} onClick={() => { onViewInvoice(inv.id); onClose(); }}>View</button></td>
@@ -368,7 +368,7 @@ export function CustomerAccountModal({
                     ))}
                   </tbody>
                 </table>
-                {!data.invoices.length && <div style={{ padding: "30px", textAlign: "center", color: "var(--muted,#64748b)", fontSize: 13 }}>No invoices found.</div>}
+                {!data.invoices.length && <div style={{ padding: "30px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>No invoices found.</div>}
               </div>
             )}
 
@@ -382,14 +382,14 @@ export function CustomerAccountModal({
                       <tr key={p.id}>
                         <td>{p.created_at.slice(0, 10)}</td>
                         <td>{p.invoice_number}</td>
-                        <td style={{ color: "#059669", fontWeight: 700 }}>{money(p.amount_cents)}</td>
+                        <td style={{ color: "var(--success)", fontWeight: 700 }}>{money(p.amount_cents)}</td>
                         <td><Badge text={p.method} /></td>
-                        <td style={{ fontSize: 12, color: "var(--muted,#64748b)" }}>{p.notes || "—"}</td>
+                        <td style={{ fontSize: 12, color: "var(--muted)" }}>{p.notes || "—"}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                {!data.payments.length && <div style={{ padding: "30px", textAlign: "center", color: "var(--muted,#64748b)", fontSize: 13 }}>No payments recorded.</div>}
+                {!data.payments.length && <div style={{ padding: "30px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>No payments recorded.</div>}
               </div>
             )}
 
@@ -403,12 +403,12 @@ export function CustomerAccountModal({
                       <tr key={f.id}>
                         <td>{f.created_at.slice(0, 10)}</td>
                         <td style={{ fontSize: 12 }}>{f.items}</td>
-                        <td style={{ fontSize: 12, color: "var(--muted,#64748b)" }}>{f.notes || "—"}</td>
+                        <td style={{ fontSize: 12, color: "var(--muted)" }}>{f.notes || "—"}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                {!data.freeIssues.length && <div style={{ padding: "30px", textAlign: "center", color: "var(--muted,#64748b)", fontSize: 13 }}>No free issues recorded.</div>}
+                {!data.freeIssues.length && <div style={{ padding: "30px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>No free issues recorded.</div>}
               </div>
             )}
 
@@ -427,7 +427,7 @@ export function CustomerAccountModal({
                     ))}
                   </tbody>
                 </table>
-                {!data.consignments.length && <div style={{ padding: "30px", textAlign: "center", color: "var(--muted,#64748b)", fontSize: 13 }}>No consignments found.</div>}
+                {!data.consignments.length && <div style={{ padding: "30px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>No consignments found.</div>}
               </div>
             )}
           </div>
@@ -534,23 +534,23 @@ export function ExpensesPanel({ isAdmin }: { isAdmin: boolean }) {
   return (
     <>
       {flash && (
-        <div style={{ background: flash.includes("✓") ? "#d1fae5" : "#fee2e2", color: flash.includes("✓") ? "#065f46" : "#991b1b", padding: "10px 20px", borderRadius: 8, marginBottom: 12, fontSize: 13, fontWeight: 600 }}>{flash}</div>
+        <div style={{ background: flash.includes("✓") ? "var(--success-soft)" : "var(--danger-soft)", color: flash.includes("✓") ? "var(--success-strong)" : "var(--danger-strong)", padding: "10px 20px", borderRadius: 8, marginBottom: 12, fontSize: 13, fontWeight: 600 }}>{flash}</div>
       )}
 
       {/* Cashbook summary */}
       {cashbook.data && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 20 }}>
-          <div style={{ background: "#f0fdf4", border: "1.5px solid #bbf7d0", borderRadius: 12, padding: "14px 18px" }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#065f46", textTransform: "uppercase", marginBottom: 4 }}>Collections (inflow)</div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: "#059669" }}>{money(cashbook.data.collectionsCents)}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 20 }}>
+          <div style={{ background: "var(--success-soft)", border: "1.5px solid var(--success-line)", borderRadius: 12, padding: "14px 18px" }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--success-strong)", textTransform: "uppercase", marginBottom: 4 }}>Collections (inflow)</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: "var(--success)" }}>{money(cashbook.data.collectionsCents)}</div>
           </div>
-          <div style={{ background: "#fff5f5", border: "1.5px solid #fca5a5", borderRadius: 12, padding: "14px 18px" }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#991b1b", textTransform: "uppercase", marginBottom: 4 }}>Expenses (outflow)</div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: "#dc2626" }}>{money(cashbook.data.expensesCents)}</div>
+          <div style={{ background: "var(--danger-soft)", border: "1.5px solid var(--danger-line)", borderRadius: 12, padding: "14px 18px" }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--danger-strong)", textTransform: "uppercase", marginBottom: 4 }}>Expenses (outflow)</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: "var(--danger)" }}>{money(cashbook.data.expensesCents)}</div>
           </div>
-          <div style={{ background: cashbook.data.netCents >= 0 ? "#f0fdf4" : "#fff5f5", border: `1.5px solid ${cashbook.data.netCents >= 0 ? "#bbf7d0" : "#fca5a5"}`, borderRadius: 12, padding: "14px 18px" }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: cashbook.data.netCents >= 0 ? "#065f46" : "#991b1b", textTransform: "uppercase", marginBottom: 4 }}>Net cashflow</div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: cashbook.data.netCents >= 0 ? "#059669" : "#dc2626" }}>{money(Math.abs(cashbook.data.netCents))}{cashbook.data.netCents < 0 ? " deficit" : " surplus"}</div>
+          <div style={{ background: cashbook.data.netCents >= 0 ? "var(--success-soft)" : "var(--danger-soft)", border: `1.5px solid ${cashbook.data.netCents >= 0 ? "var(--success-line)" : "var(--danger-line)"}`, borderRadius: 12, padding: "14px 18px" }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: cashbook.data.netCents >= 0 ? "var(--success-strong)" : "var(--danger-strong)", textTransform: "uppercase", marginBottom: 4 }}>Net cashflow</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: cashbook.data.netCents >= 0 ? "var(--success)" : "var(--danger)" }}>{money(Math.abs(cashbook.data.netCents))}{cashbook.data.netCents < 0 ? " deficit" : " surplus"}</div>
           </div>
         </div>
       )}
@@ -583,21 +583,21 @@ export function ExpensesPanel({ isAdmin }: { isAdmin: boolean }) {
                   <td>{e.date}</td>
                   <td><Badge text={e.category} /></td>
                   <td>{e.description}</td>
-                  <td style={{ color: "#dc2626", fontWeight: 700 }}>{money(e.amount_cents)}</td>
+                  <td style={{ color: "var(--danger)", fontWeight: 700 }}>{money(e.amount_cents)}</td>
                   <td><Badge text={e.method} /></td>
-                  <td style={{ fontSize: 12, color: "var(--muted,#64748b)" }}>{e.reference || "—"}</td>
-                  {isAdmin && <td><button className="secondary" style={{ padding: "4px 8px", fontSize: 11, color: "#dc2626" }} onClick={() => deleteExpense(e.id)}>Delete</button></td>}
+                  <td style={{ fontSize: 12, color: "var(--muted)" }}>{e.reference || "—"}</td>
+                  {isAdmin && <td><button className="secondary" style={{ padding: "4px 8px", fontSize: 11, color: "var(--danger)" }} onClick={() => deleteExpense(e.id)}>Delete</button></td>}
                 </tr>
               ))}
             </tbody>
           </table>
-          {!expenses.data?.length && <div style={{ padding: "30px", textAlign: "center", color: "var(--muted,#64748b)", fontSize: 13 }}>No expenses in this date range.</div>}
+          {!expenses.data?.length && <div style={{ padding: "30px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>No expenses in this date range.</div>}
         </div>
       </div>
 
       {/* Add expense form */}
       <div className="panel form-panel" style={{ marginTop: 20 }}>
-        <div className="panel-head"><h3>Record expense</h3><Plus size={18} color="#138b78" /></div>
+        <div className="panel-head"><h3>Record expense</h3><Plus size={18} style={{ color: "var(--brand-secondary)" }} /></div>
         <form onSubmit={addExpense}>
           <div className="form-grid">
             <label>Date<input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} required /></label>
@@ -677,7 +677,7 @@ export function CreditNotesPanel({
   return (
     <>
       {flash && (
-        <div style={{ background: flash.includes("✓") ? "#d1fae5" : "#fee2e2", color: flash.includes("✓") ? "#065f46" : "#991b1b", padding: "10px 20px", borderRadius: 8, marginBottom: 12, fontSize: 13, fontWeight: 600 }}>{flash}</div>
+        <div style={{ background: flash.includes("✓") ? "var(--success-soft)" : "var(--danger-soft)", color: flash.includes("✓") ? "var(--success-strong)" : "var(--danger-strong)", padding: "10px 20px", borderRadius: 8, marginBottom: 12, fontSize: 13, fontWeight: 600 }}>{flash}</div>
       )}
 
       {/* List */}
@@ -692,20 +692,20 @@ export function CreditNotesPanel({
                   <td><strong>{cn.number}</strong></td>
                   <td>{cn.shop_name}</td>
                   <td style={{ fontSize: 12 }}>{cn.reason}</td>
-                  <td style={{ color: "#059669", fontWeight: 700 }}>{money(cn.total_cents)}</td>
+                  <td style={{ color: "var(--success)", fontWeight: 700 }}>{money(cn.total_cents)}</td>
                   <td><Badge text={cn.status} variant="success" /></td>
                   <td style={{ fontSize: 12 }}>{cn.created_at.slice(0, 10)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {!creditNotes.data?.length && <div style={{ padding: "30px", textAlign: "center", color: "var(--muted,#64748b)", fontSize: 13 }}>No credit notes issued.</div>}
+          {!creditNotes.data?.length && <div style={{ padding: "30px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>No credit notes issued.</div>}
         </div>
       </div>
 
       {/* Create form */}
       <div className="panel form-panel">
-        <div className="panel-head"><h3>Issue credit note (sales return)</h3><RotateCcw size={18} color="#138b78" /></div>
+        <div className="panel-head"><h3>Issue credit note (sales return)</h3><RotateCcw size={18} style={{ color: "var(--brand-secondary)" }} /></div>
         <form onSubmit={submit}>
           <div className="form-grid">
             <label>Original invoice
@@ -720,7 +720,7 @@ export function CreditNotesPanel({
           </div>
           <div style={{ margin: "16px 0 8px", fontWeight: 700, fontSize: 13 }}>Return items</div>
           {items.map((item, i) => (
-            <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr auto auto", gap: 10, marginBottom: 10, alignItems: "end" }}>
+            <div key={i} className="resp-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr auto auto", gap: 10, marginBottom: 10, alignItems: "end" }}>
               <label style={{ fontSize: 12 }}>Product
                 <select value={item.variantId} onChange={e => {
                   const vid = e.target.value;
@@ -741,7 +741,7 @@ export function CreditNotesPanel({
           <button type="button" className="secondary" style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 6 }} onClick={() => setItems([...items, { variantId: "", quantity: 1, unitPriceCents: 0, restock: true }])}>
             <Plus size={15} /> Add item
           </button>
-          <div style={{ background: "#f0fdf4", borderRadius: 8, padding: "10px 16px", marginBottom: 16, fontSize: 13, fontWeight: 700, color: "#065f46" }}>
+          <div style={{ background: "var(--success-soft)", borderRadius: 8, padding: "10px 16px", marginBottom: 16, fontSize: 13, fontWeight: 700, color: "var(--success-strong)" }}>
             Total credit: {money(items.reduce((s, it) => s + it.quantity * it.unitPriceCents, 0))}
           </div>
           <div className="form-actions">
@@ -786,7 +786,7 @@ export function ChangePasswordPanel() {
     <div className="panel form-panel" style={{ maxWidth: 480 }}>
       <div className="panel-head"><h3>Change password</h3></div>
       {flash && (
-        <div style={{ background: flash.includes("✓") ? "#d1fae5" : "#fee2e2", color: flash.includes("✓") ? "#065f46" : "#991b1b", padding: "10px 16px", borderRadius: 8, margin: "0 0 12px", fontSize: 13, fontWeight: 600 }}>{flash}</div>
+        <div style={{ background: flash.includes("✓") ? "var(--success-soft)" : "var(--danger-soft)", color: flash.includes("✓") ? "var(--success-strong)" : "var(--danger-strong)", padding: "10px 16px", borderRadius: 8, margin: "0 0 12px", fontSize: 13, fontWeight: 600 }}>{flash}</div>
       )}
       <form onSubmit={submit}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -843,7 +843,7 @@ export function StockTransferPanel({
 
   if (warehouses.length < 2) {
     return (
-      <div style={{ padding: "30px", textAlign: "center", color: "var(--muted,#64748b)", fontSize: 13 }}>
+      <div style={{ padding: "30px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
         Stock transfers require at least two warehouses. Create a sales rep warehouse first.
       </div>
     );
@@ -852,7 +852,7 @@ export function StockTransferPanel({
   return (
     <>
       {flash && (
-        <div style={{ background: flash.includes("✓") ? "#d1fae5" : "#fee2e2", color: flash.includes("✓") ? "#065f46" : "#991b1b", padding: "10px 20px", borderRadius: 8, marginBottom: 12, fontSize: 13, fontWeight: 600 }}>{flash}</div>
+        <div style={{ background: flash.includes("✓") ? "var(--success-soft)" : "var(--danger-soft)", color: flash.includes("✓") ? "var(--success-strong)" : "var(--danger-strong)", padding: "10px 20px", borderRadius: 8, marginBottom: 12, fontSize: 13, fontWeight: 600 }}>{flash}</div>
       )}
       <div className="panel form-panel">
         <div className="panel-head"><h3>Transfer stock between warehouses</h3></div>
@@ -876,7 +876,7 @@ export function StockTransferPanel({
                 {products.map(p => <option key={p.variant_id} value={p.variant_id}>{p.name} · {p.label}</option>)}
               </select>
             </label>
-            <label>Quantity {form.variantId && form.from && <span style={{ color: "var(--muted,#64748b)", fontSize: 11, marginLeft: 6 }}>(available: {availableQty})</span>}
+            <label>Quantity {form.variantId && form.from && <span style={{ color: "var(--muted)", fontSize: 11, marginLeft: 6 }}>(available: {availableQty})</span>}
               <input type="number" min="1" max={availableQty || undefined} value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: Number(e.target.value) }))} required />
             </label>
           </div>

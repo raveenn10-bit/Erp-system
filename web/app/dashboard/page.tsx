@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   QueryClient,
@@ -7,10 +7,13 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   AreaChart,
   Area,
+  BarChart,
+  Bar,
+  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -42,6 +45,12 @@ import {
   Warehouse,
   X,
   RotateCcw,
+  ChevronRight,
+  ReceiptText,
+  UserRound,
+  Wallet,
+  MoreHorizontal,
+  TrendingUp,
 } from "lucide-react";
 import { api, idempotency, money } from "@/lib/api";
 import { InvoiceActions } from "@/components/invoice-actions";
@@ -115,21 +124,23 @@ type Stock = {
   quantity: number;
 };
 const menu = [
-  { name: "Overview", icon: LayoutDashboard },
-  { name: "Products", icon: Box },
-  { name: "Inventory", icon: Warehouse },
-  { name: "Customers", icon: Building2 },
-  { name: "Invoices", icon: FileText },
-  { name: "Free Issues", icon: Gift },
-  { name: "Consignments", icon: PackageCheck },
-  { name: "Payments", icon: CreditCard },
-  { name: "Credit Alerts", icon: Bell },
-  { name: "Expenses", icon: ArrowDownLeft },
-  { name: "Returns", icon: RotateCcw },
-  { name: "Reports", icon: BarChart3 },
-  { name: "Team", icon: Users },
-  { name: "Settings", icon: Settings },
+  { name: "Overview", si: "දළ විශ්ලේෂණය", icon: LayoutDashboard },
+  { name: "Products", si: "නිෂ්පාදන", icon: Box },
+  { name: "Inventory", si: "තොග", icon: Warehouse },
+  { name: "Customers", si: "ගනුදෙනුකරුවන්", icon: Building2 },
+  { name: "Invoices", si: "බිල්පත් / POS", icon: FileText },
+  { name: "Free Issues", si: "නොමිලේ නිකුත් කිරීම්", icon: Gift },
+  { name: "Consignments", si: "භාර තොග", icon: PackageCheck },
+  { name: "Payments", si: "ගෙවීම්", icon: CreditCard },
+  { name: "Credit Alerts", si: "ණය මතක් කිරීම්", icon: Bell },
+  { name: "Expenses", si: "වියදම්", icon: ArrowDownLeft },
+  { name: "Returns", si: "ආපසු භාණ්ඩ", icon: RotateCcw },
+  { name: "Reports", si: "වාර්තා", icon: BarChart3 },
+  { name: "Team", si: "කණ්ඩායම", icon: Users },
+  { name: "Settings", si: "සැකසුම්", icon: Settings },
+  { name: "Profile", si: "මගේ ගිණුම", icon: UserRound },
 ];
+const siLabel = (name: string) => menu.find((m) => m.name === name)?.si || "";
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 20000 } },
 });
@@ -147,7 +158,8 @@ function Workspace() {
     [open, setOpen] = useState(false),
     [toast, setToast] = useState(""),
     [invoiceId, setInvoiceId] = useState<string | null>(null),
-    [customerAccountId, setCustomerAccountId] = useState<string | null>(null);
+    [customerAccountId, setCustomerAccountId] = useState<string | null>(null),
+    [focusBilling, setFocusBilling] = useState(false);
   const reduced = useReducedMotion();
   const me = useQuery({
     queryKey: ["me"],
@@ -225,7 +237,33 @@ function Workspace() {
   function changeTab(name: string) {
     setTab(name);
     setOpen(false);
+    if (typeof window !== "undefined")
+      window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" });
   }
+  function openBilling() {
+    changeTab("Invoices");
+    setFocusBilling(true);
+  }
+  useEffect(() => {
+    if (!focusBilling || tab !== "Invoices") return;
+    const t = setTimeout(() => {
+      document
+        .getElementById("quick-billing")
+        ?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+      setFocusBilling(false);
+    }, 280);
+    return () => clearTimeout(t);
+  }, [focusBilling, tab, reduced]);
+  useEffect(() => {
+    document.body.style.overflow = open ? "hidden" : "";
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [open]);
   if (me.isLoading)
     return (
       <div className="main-content" style={{ paddingTop: 50 }}>
@@ -236,83 +274,90 @@ function Workspace() {
   const visibleMenu = menu.filter(
     (i) => user.admin || !["Team", "Settings", "Reports", "Expenses"].includes(i.name),
   );
+  const roleLabel = user.admin ? "Admin" : "Sales Representative";
+  const bottomItems = [
+    { name: "Overview", label: "Home", icon: LayoutDashboard },
+    { name: "Customers", label: "Shops", icon: Building2 },
+    { name: "Invoices", label: "Bill", icon: ReceiptText, fab: true },
+    { name: "Payments", label: "Collect", icon: Wallet },
+  ];
+  const inBottom = bottomItems.some((b) => b.name === tab);
+  async function signOut() {
+    await api("/logout", { method: "POST" });
+    router.replace("/login");
+  }
   return (
     <div className="app-shell">
       <div
         className={`mobile-overlay ${open ? "show" : ""}`}
         onClick={() => setOpen(false)}
+        aria-hidden="true"
       />
-      <aside className={`sidebar ${open ? "open" : ""}`}>
+      <aside
+        id="app-drawer"
+        className={`sidebar ${open ? "open" : ""}`}
+        aria-label="Main menu"
+      >
         <div className="sidebar-brand">
-          <span
-            className="brand-mark"
-            style={{
-              padding: 0,
-              overflow: "hidden",
-              width: 36,
-              height: 36,
-              borderRadius: "50%",
-              minWidth: 36,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <img
-              src="/nugathalawa-logo.jpg"
-              alt="Logo"
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
+          <span className="sidebar-logo">
+            <img src="/nugathalawa-logo.jpg" alt="Nugathalawa Ceylon Tea" />
           </span>
           <div>
-            <span
-              style={{
-                fontSize: 12,
-                fontWeight: 750,
-                letterSpacing: "0.04em",
-                color: "var(--brand-primary,#0e927d)",
-                textTransform: "uppercase",
-                display: "block",
-                lineHeight: 1.2,
-              }}
-            >
-              {settings.data?.name ? "NUGATHALAWA TEA" : "NUGATHALAWA TEA"}
-            </span>
-            <span
-              style={{
-                fontSize: 10,
-                opacity: 0.8,
-                display: "block",
-                letterSpacing: "0.06em",
-              }}
-            >
-              DISTRIBUTION ERP
-            </span>
+            <b>NUGATHALAWA TEA</b>
+            <small>DISTRIBUTION ERP</small>
           </div>
+          <button
+            className="sidebar-close"
+            aria-label="Close menu"
+            onClick={() => setOpen(false)}
+          >
+            <X size={18} />
+          </button>
         </div>
-        <div className="nav-label">WORKSPACE</div>
+        <button
+          className="sidebar-user"
+          style={{ textAlign: "left", width: "auto", cursor: "pointer" }}
+          onClick={() => changeTab("Profile")}
+        >
+          <span className="avatar" aria-hidden="true">
+            {user.name.slice(0, 1).toUpperCase()}
+          </span>
+          <span style={{ minWidth: 0 }}>
+            <b>{user.name}</b>
+            <small>{roleLabel}</small>
+          </span>
+        </button>
+        <div className="nav-label">WORKSPACE · වැඩබිම</div>
         <nav aria-label="Primary navigation">
-          {visibleMenu.map(({ name, icon: Icon }) => (
+          {visibleMenu.map(({ name, si, icon: Icon }) => (
             <button
               key={name}
               className={`nav-item ${tab === name ? "active" : ""}`}
+              aria-current={tab === name ? "page" : undefined}
               onClick={() => changeTab(name)}
             >
+              {tab === name && (
+                <motion.span
+                  layoutId={reduced ? undefined : "nav-active"}
+                  className="nav-active-bg"
+                  transition={{ type: "spring", stiffness: 420, damping: 36 }}
+                />
+              )}
               <Icon size={19} />
-              {name}
+              <span className="nav-text">
+                {name}
+                <small className="si" lang="si">{si}</small>
+              </span>
             </button>
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <button
-            className="nav-item"
-            onClick={async () => {
-              await api("/logout", { method: "POST" });
-              router.replace("/login");
-            }}
-          >
+          <button className="nav-item" onClick={signOut}>
             <LogOut size={19} />
-            Sign out
+            <span className="nav-text">
+              Sign out
+              <small className="si" lang="si">පිටවීම</small>
+            </span>
           </button>
         </div>
       </aside>
@@ -322,37 +367,58 @@ function Workspace() {
             <button
               className="secondary mobile-menu"
               aria-label="Open menu"
+              aria-controls="app-drawer"
+              aria-expanded={open}
               onClick={() => setOpen(true)}
             >
               <Menu size={20} />
             </button>
             <div>
               <span className="eyebrow">
-                {settings.data?.name || "NUGATHALAWA CEYLON TEA EXPORT"} ·
-                DISTRIBUTION ERP
+                {settings.data?.name || "Nugathalawa Ceylon Tea Export"}
               </span>
-              <h1>{tab}</h1>
+              <h1>
+                {tab}
+                <small className="si" lang="si">{siLabel(tab)}</small>
+              </h1>
             </div>
           </div>
           <div className="topbar-right">
-            <span className="muted" style={{ fontSize: 14 }}>
-              {user.name} · {user.admin ? "Admin" : "Sales Representative"}
+            <NotificationBellAndDrawer
+              onViewInvoice={setInvoiceId}
+              onViewCustomer={setCustomerAccountId}
+            />
+            <span className="topbar-user">
+              <b>{user.name}</b>
+              <span>{roleLabel}</span>
             </span>
-            <span className="avatar" aria-label={user.name}>
+            <button
+              className="avatar"
+              aria-label={`${user.name} profile`}
+              onClick={() => changeTab("Profile")}
+            >
               {user.name.slice(0, 1).toUpperCase()}
-            </span>
+            </button>
           </div>
         </header>
-        {toast && (
-          <div className="toast" role="status">
-            {toast}
-          </div>
-        )}
+        <AnimatePresence>
+          {toast && (
+            <motion.div
+              className="toast"
+              role="status"
+              initial={reduced ? false : { opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={reduced ? { opacity: 0 } : { opacity: 0, y: 16 }}
+            >
+              {toast}
+            </motion.div>
+          )}
+        </AnimatePresence>
         <motion.div
           key={tab}
-          initial={reduced ? false : { opacity: 0, y: 8 }}
+          initial={reduced ? false : { opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.24 }}
+          transition={{ duration: 0.26, ease: [0.22, 0.8, 0.24, 1] }}
           className="main-section"
         >
           {customerAccountId && (
@@ -369,164 +435,16 @@ function Workspace() {
             <InvoiceActions id={invoiceId} close={() => setInvoiceId(null)} />
           )}{" "}
           {tab === "Overview" && (
-            <>
-              <div className="section-lead">
-                <div>
-                  <h2>Business at a glance</h2>
-                  <p>Live figures from your distribution operations.</p>
-                </div>
-                <span className="badge">
-                  <Activity size={13} /> Live records
-                </span>
-              </div>
-              {summary.isLoading ? (
-                <div className="loader" />
-              ) : (
-                <>
-                  <div className="stats-grid">
-                    {[
-                      {
-                        title: "Total invoiced",
-                        value: money(summary.data?.totalSalesCents || 0),
-                        icon: BarChart3,
-                      },
-                      {
-                        title: "Today’s sales",
-                        value: money(summary.data?.todaySalesCents || 0),
-                        icon: ArrowUpRight,
-                      },
-                      {
-                        title: "Outstanding",
-                        value: money(summary.data?.outstandingCents || 0),
-                        icon: CreditCard,
-                      },
-                      {
-                        title: "Overdue credit",
-                        value: money(summary.data?.overdueCents || 0),
-                        icon: Bell,
-                        alert: true,
-                      },
-                      {
-                        title: "Monthly revenue",
-                        value: money(summary.data?.monthlySalesCents || 0),
-                        icon: Activity,
-                      },
-                      {
-                        title: "Active shops",
-                        value: summary.data?.activeShops || 0,
-                        icon: ShoppingBag,
-                      },
-                      {
-                        title: user.admin ? "Active reps" : "My customers",
-                        value: user.admin
-                          ? summary.data?.activeReps || 0
-                          : summary.data?.activeShops || 0,
-                        icon: Users,
-                      },
-                      {
-                        title: "Low stock",
-                        value: summary.data?.lowStock || 0,
-                        icon: Box,
-                        alert: true,
-                      },
-                    ].map((s, i) => (
-                      <motion.div
-                        key={s.title}
-                        className={`stat-card ${s.alert ? "alert" : ""}`}
-                        initial={reduced ? false : { opacity: 0, y: 12 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.035 }}
-                      >
-                        <div className="stat-top">
-                          <small>{s.title}</small>
-                          <span className="stat-icon">
-                            <s.icon size={19} />
-                          </span>
-                        </div>
-                        <strong>{s.value}</strong>
-                      </motion.div>
-                    ))}
-                  </div>
-                  <div className="workspace-grid">
-                    <div className="panel">
-                      <div className="panel-head">
-                        <h3>Recent invoices</h3>
-                        <button
-                          className="secondary"
-                          onClick={() => changeTab("Invoices")}
-                        >
-                          View all
-                        </button>
-                      </div>
-                      <InvoiceTable
-                        rows={invoices.data?.slice(0, 5) || []}
-                        onSelect={setInvoiceId}
-                      />
-                    </div>
-                    <div className="panel">
-                      <div className="panel-head">
-                        <h3>Sales activity</h3>
-                        <span className="muted">Latest transactions</span>
-                      </div>
-                      {(invoices.data || []).length ? (
-                        <ResponsiveContainer width="100%" height={240}>
-                          <AreaChart
-                            data={[...(invoices.data || [])]
-                              .reverse()
-                              .slice(-12)
-                              .map((x, i) => ({
-                                name: `#${i + 1}`,
-                                amount: x.total_cents / 100,
-                              }))}
-                          >
-                            <defs>
-                              <linearGradient
-                                id="sales-fill"
-                                x1="0"
-                                y1="0"
-                                x2="0"
-                                y2="1"
-                              >
-                                <stop
-                                  offset="5%"
-                                  stopColor="#10a58d"
-                                  stopOpacity={0.25}
-                                />
-                                <stop
-                                  offset="95%"
-                                  stopColor="#10a58d"
-                                  stopOpacity={0}
-                                />
-                              </linearGradient>
-                            </defs>
-                            <CartesianGrid vertical={false} stroke="#e9efef" />
-                            <XAxis
-                              dataKey="name"
-                              tickLine={false}
-                              axisLine={false}
-                            />
-                            <Tooltip
-                              formatter={(v) => money(Number(v) * 100)}
-                            />
-                            <Area
-                              type="monotone"
-                              dataKey="amount"
-                              stroke="#0e927d"
-                              strokeWidth={3}
-                              fill="url(#sales-fill)"
-                            />
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="chart-empty">
-                          Sales activity will appear after the first invoice.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
-            </>
+            <Overview
+              user={user}
+              summary={summary.data}
+              loading={summary.isLoading}
+              invoices={invoices.data || []}
+              reduced={!!reduced}
+              go={changeTab}
+              openBilling={openBilling}
+              onSelectInvoice={setInvoiceId}
+            />
           )}
           {tab === "Products" && (
             <>
@@ -677,7 +595,7 @@ function Workspace() {
                   onSelect={setInvoiceId}
                 />
               </div>
-              <div style={{ marginTop: 20 }}>
+              <div id="quick-billing" style={{ marginTop: 20, scrollMarginTop: 90 }}>
                 <BillingPanel
                   customers={customers.data || []}
                   products={products.data || []}
@@ -839,11 +757,444 @@ function Workspace() {
               </div>
             </>
           )}
+          {tab === "Profile" && (
+            <>
+              <Lead
+                title="My profile"
+                subtitle="Your account details and password. · ඔබේ ගිණුම් තොරතුරු."
+              />
+              <div className="panel profile-card">
+                <span className="avatar" aria-hidden="true">
+                  {user.name.slice(0, 1).toUpperCase()}
+                </span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <h3>{user.name}</h3>
+                  <span className="badge">{roleLabel}</span>
+                </div>
+                <button className="secondary" onClick={signOut}>
+                  <LogOut size={17} /> Sign out
+                </button>
+              </div>
+              <div style={{ marginTop: 20 }}>
+                <ChangePasswordPanel />
+              </div>
+            </>
+          )}
         </motion.div>
       </main>
+      <nav className="bottom-nav" aria-label="Quick navigation">
+        {bottomItems.map(({ name, label, icon: Icon, fab }) =>
+          fab ? (
+            <div className="bn-center" key={name}>
+              <button
+                className={`bn-fab ${tab === name ? "active" : ""}`}
+                aria-label="Quick billing (POS) · ඉක්මන් බිල්පත"
+                aria-current={tab === name ? "page" : undefined}
+                onClick={openBilling}
+              >
+                <Plus size={26} strokeWidth={2.4} />
+              </button>
+              <span className="bn-fab-label" aria-hidden="true">
+                {label}
+              </span>
+            </div>
+          ) : (
+            <button
+              key={name}
+              className={`bn-item ${tab === name ? "active" : ""}`}
+              aria-current={tab === name ? "page" : undefined}
+              aria-label={`${name} · ${siLabel(name)}`}
+              onClick={() => changeTab(name)}
+            >
+              {tab === name && (
+                <motion.span
+                  layoutId={reduced ? undefined : "bn-active"}
+                  className="bn-pill"
+                  transition={{ type: "spring", stiffness: 480, damping: 34 }}
+                />
+              )}
+              <Icon size={20} />
+              <span>{label}</span>
+            </button>
+          ),
+        )}
+        <button
+          className={`bn-item ${!inBottom ? "active" : ""}`}
+          aria-label="More menu · තවත්"
+          aria-controls="app-drawer"
+          aria-expanded={open}
+          onClick={() => setOpen(true)}
+        >
+          {!inBottom && (
+            <motion.span
+              layoutId={reduced ? undefined : "bn-active"}
+              className="bn-pill"
+              transition={{ type: "spring", stiffness: 480, damping: 34 }}
+            />
+          )}
+          <MoreHorizontal size={20} />
+          <span>More</span>
+        </button>
+      </nav>
     </div>
   );
 }
+function greetingFor(date: Date) {
+  const h = date.getHours();
+  if (h < 12) return { en: "Good morning", si: "සුභ උදෑසනක්" };
+  if (h < 17) return { en: "Good afternoon", si: "සුභ දහවලක්" };
+  return { en: "Good evening", si: "සුභ සන්ධ්‍යාවක්" };
+}
+function Overview({
+  user,
+  summary,
+  loading,
+  invoices,
+  reduced,
+  go,
+  openBilling,
+  onSelectInvoice,
+}: {
+  user: User;
+  summary?: Summary;
+  loading: boolean;
+  invoices: Invoice[];
+  reduced: boolean;
+  go: (tab: string) => void;
+  openBilling: () => void;
+  onSelectInvoice: (id: string) => void;
+}) {
+  const admin = !!user.admin;
+  const [range, setRange] = useState<"7d" | "recent">("7d");
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => setNow(new Date()), []);
+  const greet = greetingFor(now || new Date(0));
+  const s = summary;
+  const daily = useMemo(() => {
+    const days: { key: string; name: string; amount: number }[] = [];
+    const base = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() - i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      days.push({
+        key,
+        name: d.toLocaleDateString("en-LK", { weekday: "short" }),
+        amount: 0,
+      });
+    }
+    for (const inv of invoices) {
+      if (inv.status === "cancelled") continue;
+      const created = new Date(inv.created_at);
+      if (Number.isNaN(created.getTime())) continue;
+      const key = `${created.getFullYear()}-${String(created.getMonth() + 1).padStart(2, "0")}-${String(created.getDate()).padStart(2, "0")}`;
+      const day = days.find((d) => d.key === key);
+      if (day) day.amount += inv.total_cents / 100;
+    }
+    return days;
+  }, [invoices]);
+  const recentSeries = useMemo(
+    () =>
+      [...invoices]
+        .reverse()
+        .slice(-12)
+        .map((x, i) => ({ name: `#${i + 1}`, amount: x.total_cents / 100 })),
+    [invoices],
+  );
+  const weekTotal = daily.reduce((t, d) => t + d.amount, 0);
+  const maxDay = Math.max(...daily.map((d) => d.amount));
+  const actions = admin
+    ? [
+        { label: "New bill", si: "බිල්පත", icon: ReceiptText, onClick: openBilling },
+        { label: "Collect", si: "ගෙවීම්", icon: Wallet, onClick: () => go("Payments") },
+        { label: "Stock", si: "තොග", icon: Warehouse, onClick: () => go("Inventory") },
+        { label: "Reports", si: "වාර්තා", icon: BarChart3, onClick: () => go("Reports") },
+      ]
+    : [
+        { label: "New bill", si: "බිල්පත", icon: ReceiptText, onClick: openBilling },
+        { label: "Collect", si: "ගෙවීම්", icon: Wallet, onClick: () => go("Payments") },
+        { label: "Add shop", si: "කඩයක්", icon: Building2, onClick: () => go("Customers") },
+        { label: "Alerts", si: "ණය", icon: Bell, onClick: () => go("Credit Alerts") },
+      ];
+  const minis = admin
+    ? [
+        { title: "Total invoiced", value: money(s?.totalSalesCents || 0), icon: BarChart3 },
+        { title: "Overdue credit", value: money(s?.overdueCents || 0), icon: Bell, tone: "danger" },
+        { title: "Active shops", value: s?.activeShops || 0, icon: ShoppingBag },
+        { title: "Active reps", value: s?.activeReps || 0, icon: Users },
+        { title: "Low stock", value: s?.lowStock || 0, icon: Box, tone: "alert", wide: true },
+      ]
+    : [
+        { title: "Total invoiced", value: money(s?.totalSalesCents || 0), icon: BarChart3 },
+        { title: "Overdue credit", value: money(s?.overdueCents || 0), icon: Bell, tone: "danger" },
+        { title: "My customers", value: s?.activeShops || 0, icon: ShoppingBag },
+        { title: "Low stock", value: s?.lowStock || 0, icon: Box, tone: "alert" },
+      ];
+  const hero = admin
+    ? {
+        label: "This month’s revenue",
+        si: "මෙම මාසයේ ආදායම",
+        value: money(s?.monthlySalesCents || 0),
+        a: { label: "Today’s sales", value: money(s?.todaySalesCents || 0) },
+        b: { label: "Outstanding", value: money(s?.outstandingCents || 0) },
+      }
+    : {
+        label: "Today’s sales",
+        si: "අද විකුණුම්",
+        value: money(s?.todaySalesCents || 0),
+        a: { label: "This month", value: money(s?.monthlySalesCents || 0) },
+        b: { label: "To collect", value: money(s?.outstandingCents || 0) },
+      };
+  const rise = (i: number) =>
+    reduced
+      ? {}
+      : {
+          initial: { opacity: 0, y: 14 },
+          animate: { opacity: 1, y: 0 },
+          transition: { delay: i * 0.05, duration: 0.32, ease: [0.22, 0.8, 0.24, 1] as const },
+        };
+  return (
+    <>
+      <div className="greeting">
+        <div>
+          <p>
+            {greet.en} · <span className="si" lang="si">{greet.si}</span>
+          </p>
+          <h2>{user.name.split(" ")[0]} 👋</h2>
+        </div>
+        <span className="role-chip">
+          <i aria-hidden="true" />
+          {admin ? "Admin dashboard" : "Sales Rep dashboard"}
+        </span>
+      </div>
+      {loading ? (
+        <div className="loader" />
+      ) : (
+        <>
+          <div className="overview-top">
+            <motion.section className="hero-card" aria-label={hero.label} {...rise(0)}>
+              <div className="hero-label">
+                <span>
+                  {hero.label}
+                  <span className="si" lang="si">{hero.si}</span>
+                </span>
+                <span className="hero-badge" aria-hidden="true">
+                  <TrendingUp size={20} />
+                </span>
+              </div>
+              <div className="hero-value">{hero.value}</div>
+              {(s?.overdueCents || 0) > 0 ? (
+                <button
+                  className="hero-trend"
+                  style={{ border: 0, cursor: "pointer" }}
+                  onClick={() => go("Credit Alerts")}
+                >
+                  <Bell size={13} /> {money(s?.overdueCents || 0)} overdue · view
+                </button>
+              ) : (
+                <span className="hero-trend">
+                  <Activity size={13} /> Live records
+                </span>
+              )}
+              <div className="hero-split">
+                <div>
+                  <small>{hero.a.label}</small>
+                  <b>{hero.a.value}</b>
+                </div>
+                <div>
+                  <small>{hero.b.label}</small>
+                  <b>{hero.b.value}</b>
+                </div>
+              </div>
+            </motion.section>
+            <motion.div className="quick-panel" {...rise(1)}>
+              <div className="panel" style={{ padding: 12 }}>
+                <div className="quick-actions">
+                  {actions.map((a) => (
+                    <button key={a.label} className="quick-action" onClick={a.onClick}>
+                      <span className="qa-icon">
+                        <a.icon size={22} />
+                      </span>
+                      <span>
+                        {a.label}
+                        <small className="si" lang="si">{a.si}</small>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="mini-stats">
+                {minis.map((m) => (
+                  <div
+                    key={m.title}
+                    className={`mini-stat ${m.tone || ""}`}
+                    style={"wide" in m && m.wide ? { gridColumn: "1 / -1" } : undefined}
+                  >
+                    <span className="stat-icon">
+                      <m.icon size={18} />
+                    </span>
+                    <span style={{ minWidth: 0 }}>
+                      <small>{m.title}</small>
+                      <b>{m.value}</b>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </div>
+          <div className="workspace-grid">
+            <motion.div className="panel" {...rise(2)}>
+              <div className="panel-head" style={{ marginBottom: 6 }}>
+                <h3>
+                  Recent transactions
+                  <small className="si muted" lang="si" style={{ display: "block", fontSize: 12, fontWeight: 500 }}>
+                    මෑත බිල්පත්
+                  </small>
+                </h3>
+                <button className="see-all" onClick={() => go("Invoices")}>
+                  See all <ChevronRight size={15} />
+                </button>
+              </div>
+              <TransactionList rows={invoices.slice(0, 6)} onSelect={onSelectInvoice} />
+            </motion.div>
+            <motion.div className="panel" {...rise(3)}>
+              <div className="panel-head" style={{ marginBottom: 4 }}>
+                <h3>Sales activity</h3>
+                <div className="segmented" role="tablist" aria-label="Chart range">
+                  {(
+                    [
+                      ["7d", "7 days"],
+                      ["recent", "Latest 12"],
+                    ] as const
+                  ).map(([k, l]) => (
+                    <button
+                      key={k}
+                      role="tab"
+                      aria-selected={range === k}
+                      className={range === k ? "on" : ""}
+                      onClick={() => setRange(k)}
+                    >
+                      {range === k && (
+                        <motion.span
+                          layoutId={reduced ? undefined : "seg"}
+                          className="seg-bg"
+                        />
+                      )}
+                      <span>{l}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {invoices.length ? (
+                range === "7d" ? (
+                  <>
+                    <div className="chart-total">
+                      <small>Invoiced in the last 7 days</small>
+                      {money(Math.round(weekTotal * 100))}
+                    </div>
+                    <ResponsiveContainer width="100%" height={210}>
+                      <BarChart data={daily} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+                        <CartesianGrid vertical={false} stroke="var(--brand-border)" />
+                        <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: "var(--brand-text-muted)", fontSize: 12 }} />
+                        <Tooltip
+                          cursor={{ fill: "var(--surface-raised)" }}
+                          formatter={(v) => money(Number(v) * 100)}
+                          contentStyle={{ borderRadius: 12, border: "1px solid var(--brand-border)" }}
+                        />
+                        <Bar dataKey="amount" radius={[8, 8, 8, 8]} maxBarSize={34} isAnimationActive={!reduced}>
+                          {daily.map((d) => (
+                            <Cell
+                              key={d.key}
+                              fill={d.amount > 0 && d.amount === maxDay ? "#0C5051" : "#287E65"}
+                              fillOpacity={d.amount > 0 && d.amount === maxDay ? 1 : 0.55}
+                            />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </>
+                ) : (
+                  <ResponsiveContainer width="100%" height={262}>
+                    <AreaChart data={recentSeries} margin={{ top: 16, right: 4, left: 4, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="sales-fill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#92FD6F" stopOpacity={0.55} />
+                          <stop offset="95%" stopColor="#92FD6F" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid vertical={false} stroke="var(--brand-border)" />
+                      <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: "var(--brand-text-muted)", fontSize: 12 }} />
+                      <Tooltip
+                        formatter={(v) => money(Number(v) * 100)}
+                        contentStyle={{ borderRadius: 12, border: "1px solid var(--brand-border)" }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="amount"
+                        stroke="#0C5051"
+                        strokeWidth={3}
+                        fill="url(#sales-fill)"
+                        isAnimationActive={!reduced}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )
+              ) : (
+                <div className="chart-empty">
+                  Sales activity will appear after the first invoice.
+                </div>
+              )}
+            </motion.div>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+function TransactionList({
+  rows,
+  onSelect,
+}: {
+  rows: Invoice[];
+  onSelect: (id: string) => void;
+}) {
+  if (!rows.length)
+    return <Empty text="No invoices yet. Create your first invoice to get started." />;
+  return (
+    <ul className="txn-list">
+      {rows.map((i) => {
+        const due = i.total_cents - i.paid_cents;
+        const state =
+          i.status === "cancelled" ? "cancelled" : due > 0 ? "due" : "paid";
+        return (
+          <li key={i.id}>
+            <button className="txn-item" onClick={() => onSelect(i.id)}>
+              <span className={`txn-avatar ${state}`} aria-hidden="true">
+                {(i.shop_name || "?").slice(0, 1).toUpperCase()}
+              </span>
+              <span className="txn-body">
+                <b>{i.shop_name}</b>
+                <small>
+                  {i.number} · {String(i.created_at).slice(0, 10)}
+                </small>
+              </span>
+              <span className="txn-amount">
+                <b>{money(i.total_cents)}</b>
+                <small className={state}>
+                  {state === "cancelled"
+                    ? "Cancelled"
+                    : state === "due"
+                      ? `${money(due)} due`
+                      : "Paid"}
+                </small>
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function Lead({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div className="section-lead">
@@ -865,7 +1216,7 @@ function FormPanel({
     <div className="panel form-panel" style={{ marginTop: 20 }}>
       <div className="panel-head">
         <h3>{title}</h3>
-        <Plus size={18} color="#138b78" />
+        <Plus size={18} />
       </div>
       {children}
     </div>

@@ -319,16 +319,16 @@ export function InvoiceActions({
               {/* Dedicated WhatsApp Editing & Resend Section */}
               <div
                 style={{
-                  background: "#f0fdf4",
-                  border: "1px solid #bbf7d0",
+                  background: "var(--success-soft)",
+                  border: "1px solid var(--success-line)",
                   borderRadius: "8px",
                   padding: "12px 16px",
                   margin: "12px 0 16px",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                  <MessageCircle size={18} style={{ color: "#16a34a" }} />
-                  <b style={{ fontSize: "13px", color: "#166534" }}>WhatsApp Recipient:</b>
+                  <MessageCircle size={18} style={{ color: "var(--success)" }} />
+                  <b style={{ fontSize: "13px", color: "var(--success-strong)" }}>WhatsApp Recipient:</b>
                   <input
                     type="tel"
                     value={waInput}
@@ -338,7 +338,7 @@ export function InvoiceActions({
                       padding: "6px 10px",
                       fontSize: "13px",
                       borderRadius: "6px",
-                      border: "1px solid #86efac",
+                      border: "1px solid var(--success-line)",
                       width: "180px",
                     }}
                   />
@@ -356,7 +356,7 @@ export function InvoiceActions({
                     type="button"
                     onClick={share}
                     style={{
-                      background: "#16a34a",
+                      background: "var(--success)",
                       color: "#fff",
                       fontSize: "12px",
                       padding: "6px 14px",
@@ -370,7 +370,7 @@ export function InvoiceActions({
                   </button>
                 </div>
                 {waMsg && (
-                  <p style={{ margin: "6px 0 0", fontSize: "12px", color: waMsg.includes("successfully") ? "#15803d" : "#b91c1c" }}>
+                  <p style={{ margin: "6px 0 0", fontSize: "12px", color: waMsg.includes("successfully") ? "var(--success-strong)" : "var(--danger-strong)" }}>
                     {waMsg}
                   </p>
                 )}
@@ -468,7 +468,7 @@ export function InvoiceActions({
                 <button
                   className="secondary"
                   onClick={share}
-                  style={{ color: "#16a34a", borderColor: "#86efac" }}
+                  style={{ color: "var(--success)", borderColor: "var(--success-line)" }}
                 >
                   <MessageCircle size={16} />
                   Send via WhatsApp
