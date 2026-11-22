@@ -15,5 +15,10 @@ export function current(c:Context<Env>):Principal{return c.get('principal' as ne
 export async function guard(c:Context<Env>,cap:string){if(!await permission(c,current(c),cap))return c.json({error:'Forbidden'},403);return null;}
 export function sessionCookie(token:string,secure:boolean){return `erp_session=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=604800${secure?'; Secure':''}`;}
 export function clearCookie(secure:boolean){return `erp_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${secure?'; Secure':''}`;}
-export function csrf(c:Context<Env>){const origin=c.req.header('Origin');return !!origin&&origin===c.env.FRONTEND_ORIGIN;}
+export function allowedOrigin(c:Context<Env>,origin:string){
+  const sameOrigin=new URL(c.req.url).origin;
+  const configured=(c.env.FRONTEND_ORIGIN||'').split(',').map(value=>value.trim()).filter(Boolean);
+  return origin===sameOrigin||configured.includes(origin);
+}
+export function csrf(c:Context<Env>){const origin=c.req.header('Origin');return !!origin&&allowedOrigin(c,origin);}
 export async function audit(db:D1Database,actor:string|null,action:string,entity:string|null,details=''){await db.prepare('INSERT INTO audit_logs VALUES(?,?,?,?,?,?)').bind(uuid(),actor,action,entity,details,now()).run();}

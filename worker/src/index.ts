@@ -1,7 +1,7 @@
 import {Hono} from 'hono';
 import {cors} from 'hono/cors';
 import {z} from 'zod';
-import {audit,clearCookie,csrf,current,guard,now,passwordHash,permission,requireUser,sessionCookie,sha256,uuid,verifyPassword,type Env} from './security';
+import {allowedOrigin,audit,clearCookie,csrf,current,guard,now,passwordHash,permission,requireUser,sessionCookie,sha256,uuid,verifyPassword,type Env} from './security';
 import {asCents,dueDate,lineTotal,reminderDate,sumLines} from './finance';
 const app=new Hono<Env>();
 const safe=z.string().trim().min(1).max(180);
@@ -12,7 +12,7 @@ const customerSchema=z.object({shopName:safe,ownerName:safe,phone:z.string().max
 const invoiceSchema=z.object({customerId:z.string().min(1),warehouseId:z.string().min(1),idempotencyKey:key,items:z.array(z.object({variantId:z.string().min(1),quantity:z.number().int().positive()})).min(1),initialPaymentCents:z.number().int().nonnegative().default(0),paymentMethod:z.enum(['cash','bank','other']).default('cash')});
 const paymentSchema=z.object({invoiceId:z.string(),amountCents:z.number().int().positive(),method:z.enum(['cash','bank','other']),idempotencyKey:key});
 const json=async<T extends z.ZodTypeAny>(c:any,schema:T):Promise<z.infer<T>>=>schema.parse(await c.req.json());
-app.use('*',async(c,next)=>cors({origin:c.env.FRONTEND_ORIGIN,credentials:true,allowMethods:['GET','POST','PATCH','DELETE'],allowHeaders:['Content-Type','Idempotency-Key']})(c,next));
+app.use('*',async(c,next)=>cors({origin:(origin)=>allowedOrigin(c,origin)?origin:null,credentials:true,allowMethods:['GET','POST','PATCH','DELETE'],allowHeaders:['Content-Type','Idempotency-Key']})(c,next));
 app.use('*',async(c,next)=>{c.header('X-Content-Type-Options','nosniff');c.header('Referrer-Policy','strict-origin-when-cross-origin');c.header('Content-Security-Policy',"default-src 'none'; frame-ancestors 'none'");c.header('Cache-Control','no-store');if(!['GET','HEAD','OPTIONS'].includes(c.req.method)&&!csrf(c))return c.json({error:'Invalid request origin'},403);await next();});
 app.get('/api/health',c=>c.json({ok:true}));
 app.post('/api/setup',async c=>{const secret=c.env.SETUP_TOKEN;if(!secret||c.req.header('X-Setup-Token')!==secret)return c.json({error:'Setup unavailable'},403);const exists=await c.env.DB.prepare('SELECT id FROM users LIMIT 1').first();if(exists)return c.json({error:'Already configured'},409);const data=await json(c,z.object({name:safe,email:z.email(),password:z.string().min(14).max(200)}));await c.env.DB.batch([c.env.DB.prepare('INSERT INTO users VALUES(?,?,?,?,?,?,?)').bind(uuid(),data.name,data.email.toLowerCase(),await passwordHash(data.password),'admin',1,now()),c.env.DB.prepare('INSERT INTO audit_logs VALUES(?,?,?,?,?,?)').bind(uuid(),null,'initial_setup',null,'',now())]);return c.json({ok:true},201);});
