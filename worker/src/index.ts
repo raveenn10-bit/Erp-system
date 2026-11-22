@@ -1,55 +1,1144 @@
-import {Hono} from 'hono';
-import {cors} from 'hono/cors';
-import {z} from 'zod';
-import {allowedOrigin,audit,clearCookie,csrf,current,guard,now,passwordHash,permission,requireUser,sessionCookie,sha256,uuid,verifyPassword,type Env} from './security';
-import {asCents,dueDate,lineTotal,reminderDate,sumLines} from './finance';
-const app=new Hono<Env>();
-const safe=z.string().trim().min(1).max(180);
-const key=z.string().min(12).max(128);
-const loginSchema=z.object({email:z.email(),password:z.string().min(8)});
-const productSchema=z.object({name:safe,sku:safe,barcode:z.string().max(80).optional(),categoryId:z.string().optional(),variants:z.array(z.object({label:safe,unit:safe,grams:z.number().int().positive().optional(),retailCents:z.number().int().nonnegative(),wholesaleCents:z.number().int().nonnegative(),costCents:z.number().int().nonnegative(),lowStock:z.number().int().nonnegative().default(0)})).min(1)});
-const customerSchema=z.object({shopName:safe,ownerName:safe,phone:z.string().max(40).default(''),whatsapp:z.string().max(40).default(''),address:z.string().max(300).default(''),location:z.string().max(200).default(''),type:z.enum(['wholesale','retail']),creditLimitCents:z.number().int().nonnegative().default(0),creditDays:z.number().int().min(0).max(45).default(0),repId:z.string().optional()});
-const invoiceSchema=z.object({customerId:z.string().min(1),warehouseId:z.string().min(1),idempotencyKey:key,items:z.array(z.object({variantId:z.string().min(1),quantity:z.number().int().positive()})).min(1),initialPaymentCents:z.number().int().nonnegative().default(0),paymentMethod:z.enum(['cash','bank','other']).default('cash')});
-const paymentSchema=z.object({invoiceId:z.string(),amountCents:z.number().int().positive(),method:z.enum(['cash','bank','other']),idempotencyKey:key});
-const json=async<T extends z.ZodTypeAny>(c:any,schema:T):Promise<z.infer<T>>=>schema.parse(await c.req.json());
-app.use('*',async(c,next)=>cors({origin:(origin)=>allowedOrigin(c,origin)?origin:null,credentials:true,allowMethods:['GET','POST','PATCH','DELETE'],allowHeaders:['Content-Type','Idempotency-Key']})(c,next));
-app.use('*',async(c,next)=>{c.header('X-Content-Type-Options','nosniff');c.header('Referrer-Policy','strict-origin-when-cross-origin');c.header('Content-Security-Policy',"default-src 'none'; frame-ancestors 'none'");c.header('Cache-Control','no-store');if(!['GET','HEAD','OPTIONS'].includes(c.req.method)&&!csrf(c))return c.json({error:'Invalid request origin'},403);await next();});
-app.get('/api/health',c=>c.json({ok:true}));
-app.post('/api/setup',async c=>{const secret=c.env.SETUP_TOKEN;if(!secret||c.req.header('X-Setup-Token')!==secret)return c.json({error:'Setup unavailable'},403);const exists=await c.env.DB.prepare('SELECT id FROM users LIMIT 1').first();if(exists)return c.json({error:'Already configured'},409);const data=await json(c,z.object({name:safe,email:z.email(),password:z.string().min(8).max(200)}));await c.env.DB.batch([c.env.DB.prepare('INSERT INTO users VALUES(?,?,?,?,?,?,?)').bind(uuid(),data.name,data.email.toLowerCase(),await passwordHash(data.password),'admin',1,now()),c.env.DB.prepare('INSERT INTO audit_logs VALUES(?,?,?,?,?,?)').bind(uuid(),null,'initial_setup',null,'',now())]);return c.json({ok:true},201);});
-app.post('/api/login',async c=>{const {email,password}=await json(c,loginSchema);const login=email.toLowerCase();const db=c.env.DB;const attempt=await db.prepare('SELECT attempts,window_start FROM login_attempts WHERE key=?').bind(login).first<{attempts:number;window_start:string}>();if(attempt&&Date.now()-Date.parse(attempt.window_start)<900000&&attempt.attempts>=5)return c.json({error:'Too many attempts. Try later.'},429);const u=await db.prepare('SELECT id,password_hash,active FROM users WHERE email=?').bind(login).first<{id:string;password_hash:string;active:number}>();if(!u||!u.active||!await verifyPassword(password,u.password_hash)){await db.prepare(`INSERT INTO login_attempts(key,attempts,window_start) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN window_start<? THEN 1 ELSE attempts+1 END,window_start=CASE WHEN window_start<? THEN excluded.window_start ELSE window_start END`).bind(login,now(),new Date(Date.now()-900000).toISOString(),new Date(Date.now()-900000).toISOString()).run();return c.json({error:'Invalid credentials'},401);}await db.prepare('DELETE FROM login_attempts WHERE key=?').bind(login).run();const token=uuid()+uuid();await db.prepare('INSERT INTO sessions VALUES(?,?,?,?,?)').bind(uuid(),u.id,await sha256(token),new Date(Date.now()+604800000).toISOString(),now()).run();c.header('Set-Cookie',sessionCookie(token,new URL(c.req.url).protocol==='https:'));await audit(db,u.id,'login',u.id);return c.json({ok:true});});
-app.use('/api/*',requireUser);
-app.get('/api/me',async c=>c.json({user:current(c)}));
-app.post('/api/logout',async c=>{const token=c.req.header('Cookie')?.match(/(?:^|;\s*)erp_session=([^;]+)/)?.[1];if(token)await c.env.DB.prepare('DELETE FROM sessions WHERE token_hash=?').bind(await sha256(token)).run();c.header('Set-Cookie',clearCookie(new URL(c.req.url).protocol==='https:'));return c.json({ok:true});});
-app.post('/api/change-password',async c=>{const p=current(c),d=await json(c,z.object({current:z.string(),next:z.string().min(8).max(200)}));const row=await c.env.DB.prepare('SELECT password_hash FROM users WHERE id=?').bind(p.id).first<{password_hash:string}>();if(!row||!await verifyPassword(d.current,row.password_hash))return c.json({error:'Incorrect password'},403);await c.env.DB.batch([c.env.DB.prepare('UPDATE users SET password_hash=? WHERE id=?').bind(await passwordHash(d.next),p.id),c.env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(p.id)]);c.header('Set-Cookie',clearCookie(new URL(c.req.url).protocol==='https:'));return c.json({ok:true});});
-app.get('/api/settings',async c=>{const denied=await guard(c,'settings.view');if(denied)return denied;return c.json(await c.env.DB.prepare('SELECT * FROM business_settings WHERE id=1').first());});
-app.patch('/api/settings',async c=>{const denied=await guard(c,'settings.edit');if(denied)return denied;const d=await json(c,z.object({name:safe,address:z.string().max(300),email:z.string().max(180),phone:z.string().max(40),whatsapp:z.string().max(40)}));await c.env.DB.prepare('UPDATE business_settings SET name=?,address=?,email=?,phone=?,whatsapp=? WHERE id=1').bind(d.name,d.address,d.email,d.phone,d.whatsapp).run();await audit(c.env.DB,current(c).id,'business_settings',null);return c.json({ok:true});});
-app.get('/api/users',async c=>{if(!current(c).admin)return c.json({error:'Forbidden'},403);return c.json((await c.env.DB.prepare('SELECT id,name,email,role_id,active,created_at FROM users ORDER BY created_at DESC LIMIT 500').all()).results);});
-app.post('/api/users',async c=>{if(!current(c).admin)return c.json({error:'Forbidden'},403);const d=await json(c,z.object({name:safe,email:z.email(),password:z.string().min(8).max(200),roleId:z.string().min(1)}));const role=await c.env.DB.prepare('SELECT id FROM roles WHERE id=?').bind(d.roleId).first();if(!role)return c.json({error:'Invalid role'},400);const id=uuid();await c.env.DB.batch([c.env.DB.prepare('INSERT INTO users VALUES(?,?,?,?,?,?,?)').bind(id,d.name,d.email.toLowerCase(),await passwordHash(d.password),d.roleId,1,now()),c.env.DB.prepare('INSERT INTO warehouses VALUES(?,?,?)').bind(uuid(),`${d.name} stock`,id)]);await audit(c.env.DB,current(c).id,'user.created',id);return c.json({id},201);});
-app.patch('/api/users/:id',async c=>{if(!current(c).admin)return c.json({error:'Forbidden'},403);const id=c.req.param('id');if(id===current(c).id)return c.json({error:'Cannot change own account'},400);const d=await json(c,z.object({active:z.boolean().optional(),roleId:z.string().optional()}));if(d.roleId){const r=await c.env.DB.prepare('SELECT id FROM roles WHERE id=?').bind(d.roleId).first();if(!r)return c.json({error:'Invalid role'},400);}await c.env.DB.batch([c.env.DB.prepare('UPDATE users SET active=COALESCE(?,active),role_id=COALESCE(?,role_id) WHERE id=?').bind(d.active===undefined?null:Number(d.active),d.roleId??null,id),c.env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(id)]);await audit(c.env.DB,current(c).id,'user.updated',id);return c.json({ok:true});});
-app.get('/api/permissions',async c=>{if(!current(c).admin)return c.json({error:'Forbidden'},403);return c.json((await c.env.DB.prepare('SELECT * FROM permissions ORDER BY key').all()).results);});
-app.get('/api/roles',async c=>{if(!current(c).admin)return c.json({error:'Forbidden'},403);return c.json((await c.env.DB.prepare('SELECT r.id,r.name,r.admin,GROUP_CONCAT(rp.permission_key) AS permission_keys FROM roles r LEFT JOIN role_permissions rp ON rp.role_id=r.id GROUP BY r.id ORDER BY r.name').all()).results);});
-app.post('/api/roles',async c=>{if(!current(c).admin)return c.json({error:'Forbidden'},403);const d=await json(c,z.object({name:safe,permissionKeys:z.array(z.string()).default([])}));const db=c.env.DB,id=uuid();await db.batch([db.prepare('INSERT INTO roles VALUES(?,?,0)').bind(id,d.name),...d.permissionKeys.map(x=>db.prepare('INSERT INTO role_permissions VALUES(?,?)').bind(id,x))]);await audit(db,current(c).id,'role.created',id);return c.json({id},201);});
-app.patch('/api/users/:id/permissions',async c=>{if(!current(c).admin)return c.json({error:'Forbidden'},403);const id=c.req.param('id'),d=await json(c,z.object({key:z.string(),allowed:z.boolean().nullable()})),db=c.env.DB;if(d.allowed===null)await db.prepare('DELETE FROM user_permissions WHERE user_id=? AND permission_key=?').bind(id,d.key).run();else await db.prepare('INSERT INTO user_permissions VALUES(?,?,?) ON CONFLICT(user_id,permission_key) DO UPDATE SET allowed=excluded.allowed').bind(id,d.key,Number(d.allowed)).run();await audit(db,current(c).id,'permission.changed',id,d.key);return c.json({ok:true});});
-app.post('/api/users/:id/reset-password',async c=>{if(!current(c).admin)return c.json({error:'Forbidden'},403);const id=c.req.param('id'),d=await json(c,z.object({newPassword:z.string().min(8).max(200)}));await c.env.DB.batch([c.env.DB.prepare('UPDATE users SET password_hash=? WHERE id=?').bind(await passwordHash(d.newPassword),id),c.env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(id)]);await audit(c.env.DB,current(c).id,'password.reset',id);return c.json({ok:true});});
-app.get('/api/products',async c=>{const denied=await guard(c,'products.view');if(denied)return denied;return c.json((await c.env.DB.prepare('SELECT p.id,p.name,p.sku,p.barcode,p.active,v.id AS variant_id,v.label,v.unit,v.grams,v.retail_cents,v.wholesale_cents,v.low_stock,COALESCE(s.quantity,0) AS main_stock FROM products p JOIN product_variants v ON v.product_id=p.id LEFT JOIN stock_balances s ON s.variant_id=v.id AND s.warehouse_id=? ORDER BY p.name LIMIT 500').bind('main').all()).results);});
-app.post('/api/products',async c=>{if(!current(c).admin)return c.json({error:'Admin only'},403);const d=await json(c,productSchema),db=c.env.DB,id=uuid();const stmts=[db.prepare('INSERT INTO products VALUES(?,?,?,?,?,1,?)').bind(id,d.categoryId??null,d.name,d.sku,d.barcode??null,now()),...d.variants.map(v=>db.prepare('INSERT INTO product_variants VALUES(?,?,?,?,?,?,?,?,?)').bind(uuid(),id,v.label,v.unit,v.grams??null,v.retailCents,v.wholesaleCents,v.costCents,v.lowStock))];await db.batch(stmts);await audit(db,current(c).id,'product.created',id);return c.json({id},201);});
-app.get('/api/customers',async c=>{const denied=await guard(c,'customers.view');if(denied)return denied;const p=current(c);const q=p.admin||await permission(c,p,'customers.view_all')?'SELECT * FROM customers ORDER BY created_at DESC LIMIT 500':'SELECT c.* FROM customers c JOIN customer_assignments a ON a.customer_id=c.id WHERE a.rep_id=? ORDER BY c.created_at DESC LIMIT 500';return c.json((await c.env.DB.prepare(q).bind(...(q.includes('a.rep_id=?')?[p.id]:[])).all()).results);});
-app.post('/api/customers',async c=>{const denied=await guard(c,'customers.create');if(denied)return denied;const d=await json(c,customerSchema),p=current(c),id=uuid(),db=c.env.DB;if(!p.admin&&(d.repId&&d.repId!==p.id||d.creditLimitCents>0||d.creditDays>0))return c.json({error:'Admin approval required for credit or assignment'},403);const rep=p.admin?d.repId:p.id;await db.batch([db.prepare('INSERT INTO customers VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,d.shopName,d.ownerName,d.phone,d.whatsapp,d.address,d.location,d.type,d.creditLimitCents,d.creditDays,1,now()),...(rep?[db.prepare('INSERT INTO customer_assignments VALUES(?,?)').bind(id,rep)]:[])]);await audit(db,p.id,'customer.created',id);return c.json({id},201);});
-app.post('/api/stock/adjust',async c=>{if(!current(c).admin)return c.json({error:'Admin only'},403);const d=await json(c,z.object({warehouseId:z.string(),variantId:z.string(),delta:z.number().int().refine(x=>x!==0),reason:safe}));const db=c.env.DB,id=uuid(),from=d.delta<0?d.warehouseId:null,to=d.delta>0?d.warehouseId:null;await db.batch([db.prepare('INSERT INTO stock_movements VALUES(?,?,?,?,?,?,?,?)').bind(id,d.variantId,from,to,Math.abs(d.delta),d.reason,null,now()),db.prepare('INSERT INTO stock_balances VALUES(?,?,?) ON CONFLICT(warehouse_id,variant_id) DO UPDATE SET quantity=quantity+excluded.quantity').bind(d.warehouseId,d.variantId,d.delta)]);await audit(db,current(c).id,'stock.adjusted',id);return c.json({id},201);});
-app.post('/api/stock/transfer',async c=>{const denied=await guard(c,'stock.allocate');if(denied)return denied;const d=await json(c,z.object({from:z.string(),to:z.string(),variantId:z.string(),quantity:z.number().int().positive()}));if(d.from===d.to)return c.json({error:'Select different warehouses'},400);const db=c.env.DB,id=uuid();await db.batch([db.prepare('INSERT INTO stock_movements VALUES(?,?,?,?,?,?,?,?)').bind(id,d.variantId,d.from,d.to,d.quantity,'transfer',null,now()),db.prepare('UPDATE stock_balances SET quantity=quantity-? WHERE warehouse_id=? AND variant_id=?').bind(d.quantity,d.from,d.variantId),db.prepare('INSERT INTO stock_balances VALUES(?,?,?) ON CONFLICT(warehouse_id,variant_id) DO UPDATE SET quantity=quantity+excluded.quantity').bind(d.to,d.variantId,d.quantity)]);await audit(db,current(c).id,'stock.transferred',id);return c.json({id},201);});
-app.get('/api/stock',async c=>{const denied=await guard(c,'stock.view');if(denied)return denied;const p=current(c);return c.json((await c.env.DB.prepare(`SELECT b.*,v.label,p.name,w.name AS warehouse FROM stock_balances b JOIN product_variants v ON v.id=b.variant_id JOIN products p ON p.id=v.product_id JOIN warehouses w ON w.id=b.warehouse_id WHERE (?=1 OR w.rep_id=?) ORDER BY p.name LIMIT 500`).bind(p.admin,p.id).all()).results);});
-app.post('/api/invoices',async c=>{const denied=await guard(c,'invoices.create');if(denied)return denied;const d=await json(c,invoiceSchema),db=c.env.DB,p=current(c),existing=await db.prepare('SELECT id,number FROM invoices WHERE idempotency_key=?').bind(d.idempotencyKey).first();if(existing)return c.json(existing);const customer=await db.prepare('SELECT * FROM customers WHERE id=? AND active=1').bind(d.customerId).first<{id:string;type:string;credit_days:number;credit_limit_cents:number}>();if(!customer)return c.json({error:'Customer unavailable'},404);if(!p.admin){const assigned=await db.prepare('SELECT 1 FROM customer_assignments WHERE customer_id=? AND rep_id=?').bind(d.customerId,p.id).first();if(!assigned)return c.json({error:'Customer not assigned'},403);const wh=await db.prepare('SELECT 1 FROM warehouses WHERE id=? AND rep_id=?').bind(d.warehouseId,p.id).first();if(!wh)return c.json({error:'Warehouse not assigned'},403);}if(new Set(d.items.map(x=>x.variantId)).size!==d.items.length)return c.json({error:'Duplicate variants in invoice'},400);
-const items=[] as {variantId:string;quantity:number;unitPriceCents:number;costCents:number}[];for(const x of d.items){const v=await db.prepare('SELECT v.retail_cents,v.wholesale_cents,v.cost_cents FROM product_variants v JOIN products p ON p.id=v.product_id WHERE v.id=? AND p.active=1').bind(x.variantId).first<{retail_cents:number;wholesale_cents:number;cost_cents:number}>();if(!v)return c.json({error:'Variant unavailable'},400);items.push({variantId:x.variantId,quantity:x.quantity,unitPriceCents:customer.type==='wholesale'?v.wholesale_cents:v.retail_cents,costCents:v.cost_cents});}
-const total=sumLines(items.map(x=>({unitPriceCents:x.unitPriceCents,quantity:x.quantity})));if(d.initialPaymentCents>total)return c.json({error:'Initial payment exceeds total'},400);const days=customer.credit_days;const outstanding=total-d.initialPaymentCents;if(outstanding&&days===0)return c.json({error:'Customer has no credit terms'},400);
-const date=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Colombo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());const due=outstanding?dueDate(date,days):null;const id=uuid();const number=`SD-${date.replaceAll('-','')}-${id.slice(0,8).toUpperCase()}`;const created=now();const statements=[db.prepare('INSERT INTO invoices VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,number,d.customerId,p.id,d.warehouseId,total,d.initialPaymentCents,'posted',due,d.idempotencyKey,created,null),...items.flatMap(x=>[db.prepare('INSERT INTO stock_movements VALUES(?,?,?,?,?,?,?,?)').bind(uuid(),x.variantId,d.warehouseId,null,x.quantity,'sale',id,created),db.prepare('UPDATE stock_balances SET quantity=quantity-? WHERE warehouse_id=? AND variant_id=?').bind(x.quantity,d.warehouseId,x.variantId),db.prepare('INSERT INTO invoice_items VALUES(?,?,?,?,?,?,?)').bind(uuid(),id,x.variantId,x.quantity,x.unitPriceCents,x.costCents,lineTotal(x.unitPriceCents,x.quantity))]),...(d.initialPaymentCents?[db.prepare('INSERT INTO payments VALUES(?,?,?,?,?,?,?)').bind(uuid(),id,d.initialPaymentCents,d.paymentMethod,`${d.idempotencyKey}:initial`,p.id,created)]:[])];try{await db.batch(statements);}catch(e){const previous=await db.prepare('SELECT id,number FROM invoices WHERE idempotency_key=?').bind(d.idempotencyKey).first();if(previous)return c.json(previous);throw e;}await audit(db,p.id,'invoice.posted',id);return c.json({id,number,totalCents:total,paidCents:d.initialPaymentCents,dueAt:due},201);});
-app.get('/api/invoices',async c=>{const denied=await guard(c,'invoices.view');if(denied)return denied;const p=current(c);return c.json((await c.env.DB.prepare(`SELECT i.id,i.number,i.total_cents,i.paid_cents,i.due_at,i.status,i.created_at,c.shop_name FROM invoices i JOIN customers c ON c.id=i.customer_id WHERE (?=1 OR i.rep_id=?) ORDER BY i.created_at DESC LIMIT 200`).bind(p.admin,p.id).all()).results);});
-app.get('/api/invoices/:id',async c=>{const denied=await guard(c,'invoices.view');if(denied)return denied;const p=current(c),id=c.req.param('id'),db=c.env.DB;const invoice=await db.prepare(`SELECT i.*,c.shop_name,c.address,c.whatsapp,b.name AS business_name,b.address AS business_address,b.phone AS business_phone,b.whatsapp AS business_whatsapp,b.email AS business_email FROM invoices i JOIN customers c ON c.id=i.customer_id CROSS JOIN business_settings b WHERE i.id=? AND (?=1 OR i.rep_id=?)`).bind(id,p.admin,p.id).first();if(!invoice)return c.json({error:'Not found'},404);const items=(await db.prepare('SELECT ii.*,p.name,v.label FROM invoice_items ii JOIN product_variants v ON v.id=ii.variant_id JOIN products p ON p.id=v.product_id WHERE invoice_id=?').bind(id).all()).results;return c.json({invoice,items});});
-app.post('/api/invoices/:id/cancel',async c=>{if(!current(c).admin)return c.json({error:'Admin only'},403);const id=c.req.param('id'),db=c.env.DB,invoice=await db.prepare('SELECT * FROM invoices WHERE id=?').bind(id).first<{status:string;paid_cents:number;warehouse_id:string}>();if(!invoice||invoice.status!=='posted')return c.json({error:'Invoice not found or already cancelled'},404);if(invoice.paid_cents)return c.json({error:'Refund recorded payments before cancellation'},409);const items=(await db.prepare('SELECT variant_id,quantity FROM invoice_items WHERE invoice_id=?').bind(id).all<{variant_id:string;quantity:number}>()).results;await db.batch([db.prepare("UPDATE invoices SET status='cancelled',cancelled_at=? WHERE id=? AND status='posted' AND paid_cents=0").bind(now(),id),...items.flatMap(x=>[db.prepare('INSERT INTO stock_movements VALUES(?,?,?,?,?,?,?,?)').bind(uuid(),x.variant_id,null,invoice.warehouse_id,x.quantity,'invoice_reversal',id,now()),db.prepare('INSERT INTO stock_balances VALUES(?,?,?) ON CONFLICT(warehouse_id,variant_id) DO UPDATE SET quantity=quantity+excluded.quantity').bind(invoice.warehouse_id,x.variant_id,x.quantity)])]);await audit(db,current(c).id,'invoice.cancelled',id);return c.json({ok:true});});
-app.post('/api/payments',async c=>{const denied=await guard(c,'payments.create');if(denied)return denied;const d=await json(c,paymentSchema),db=c.env.DB,p=current(c),existing=await db.prepare('SELECT id FROM payments WHERE idempotency_key=?').bind(d.idempotencyKey).first();if(existing)return c.json(existing);const i=await db.prepare('SELECT * FROM invoices WHERE id=? AND status=?').bind(d.invoiceId,'posted').first<{id:string;rep_id:string;paid_cents:number;total_cents:number}>();if(!i)return c.json({error:'Invoice unavailable'},404);if(!p.admin&&i.rep_id!==p.id)return c.json({error:'Not your invoice'},403);if(d.amountCents>i.total_cents-i.paid_cents)return c.json({error:'Amount exceeds outstanding'},400);const id=uuid();try{await db.batch([db.prepare('UPDATE invoices SET paid_cents=paid_cents+? WHERE id=? AND status=? AND total_cents-paid_cents>=?').bind(d.amountCents,i.id,'posted',d.amountCents),db.prepare('INSERT INTO payments VALUES(?,?,?,?,?,?,?)').bind(id,i.id,d.amountCents,d.method,d.idempotencyKey,p.id,now())]);}catch(e){const prev=await db.prepare('SELECT id FROM payments WHERE idempotency_key=?').bind(d.idempotencyKey).first();if(prev)return c.json(prev);throw e;}await audit(db,p.id,'payment.recorded',id);return c.json({id},201);});
-app.get('/api/dashboard',async c=>{const denied=await guard(c,'dashboard.view');if(denied)return denied;const p=current(c),db=c.env.DB,scope=p.admin?'1=1':'rep_id=?',args=p.admin?[]:[p.id];const localDay=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Colombo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());const start=new Date(Date.parse(`${localDay}T00:00:00Z`)-19800000).toISOString();const month=new Date(Date.parse(`${localDay.slice(0,7)}-01T00:00:00Z`)-19800000).toISOString();const [sales,today,monthly,outstanding,overdue,shops,reps,low]=await Promise.all([db.prepare(`SELECT COALESCE(SUM(total_cents),0) AS amount FROM invoices WHERE status='posted' AND ${scope}`).bind(...args).first(),db.prepare(`SELECT COALESCE(SUM(total_cents),0) AS amount FROM invoices WHERE status='posted' AND created_at>=? AND ${scope}`).bind(start,...args).first(),db.prepare(`SELECT COALESCE(SUM(total_cents),0) AS amount FROM invoices WHERE status='posted' AND created_at>=? AND ${scope}`).bind(month,...args).first(),db.prepare(`SELECT COALESCE(SUM(total_cents-paid_cents),0) AS amount FROM invoices WHERE status='posted' AND ${scope}`).bind(...args).first(),db.prepare(`SELECT COALESCE(SUM(total_cents-paid_cents),0) AS amount FROM invoices WHERE status='posted' AND due_at<? AND ${scope}`).bind(localDay,...args).first(),db.prepare(p.admin?'SELECT COUNT(*) AS count FROM customers WHERE active=1':'SELECT COUNT(*) AS count FROM customer_assignments a JOIN customers c ON c.id=a.customer_id WHERE c.active=1 AND a.rep_id=?').bind(...args).first(),p.admin?db.prepare("SELECT COUNT(*) AS count FROM users WHERE role_id='sales_rep' AND active=1").first():Promise.resolve({count:0}),db.prepare(`SELECT COUNT(*) AS count FROM stock_balances b JOIN product_variants v ON v.id=b.variant_id JOIN warehouses w ON w.id=b.warehouse_id WHERE b.quantity<=v.low_stock AND (?=1 OR w.rep_id=?)`).bind(p.admin,p.id).first()]);return c.json({totalSalesCents:(sales as any)?.amount??0,todaySalesCents:(today as any)?.amount??0,monthlySalesCents:(monthly as any)?.amount??0,outstandingCents:(outstanding as any)?.amount??0,overdueCents:(overdue as any)?.amount??0,activeShops:(shops as any)?.count??0,activeReps:(reps as any)?.count??0,lowStock:(low as any)?.count??0});});
-app.get('/api/reports/summary',async c=>{const denied=await guard(c,'reports.view');if(denied)return denied;const p=current(c),db=c.env.DB;const from=c.req.query('from')||'2000-01-01',to=c.req.query('to')||'2100-01-01';if(!/^\d{4}-\d{2}-\d{2}$/.test(from)||!/^\d{4}-\d{2}-\d{2}$/.test(to))return c.json({error:'Invalid date filter'},400);const q=await db.prepare(`SELECT COALESCE(SUM(i.total_cents),0) AS invoiced_cents,COALESCE(SUM(i.paid_cents),0) AS collected_cents,COALESCE(SUM(i.total_cents-i.paid_cents),0) AS receivables_cents,COALESCE(SUM((SELECT SUM((ii.unit_price_cents-ii.cost_cents)*ii.quantity) FROM invoice_items ii WHERE ii.invoice_id=i.id)),0) AS gross_profit_cents FROM invoices i WHERE i.status='posted' AND i.created_at>=? AND i.created_at<? AND (?=1 OR i.rep_id=?)`).bind(`${from}T00:00:00`,`${to}T23:59:59`,p.admin,p.id).first();return c.json(q);});
-app.get('/api/reports/:kind',async c=>{const denied=await guard(c,'reports.view');if(denied)return denied;const kind=c.req.param('kind'),db=c.env.DB,p=current(c),from=c.req.query('from')||'2000-01-01',to=c.req.query('to')||'2100-01-01';if(!/^\d{4}-\d{2}-\d{2}$/.test(from)||!/^\d{4}-\d{2}-\d{2}$/.test(to))return c.json({error:'Invalid date range'},400);let sql='';let args:(string|number)[]=[];const scope=' AND (?=1 OR i.rep_id=?)';const d=[`${from}T00:00:00`,`${to}T23:59:59`,p.admin,p.id];switch(kind){case 'daily-sales':sql=`SELECT substr(i.created_at,1,10) AS date,COUNT(*) AS invoices,SUM(i.total_cents) AS invoiced_cents,SUM(i.paid_cents) AS collected_cents FROM invoices i WHERE i.status='posted' AND i.created_at>=? AND i.created_at<=? ${scope} GROUP BY date ORDER BY date DESC LIMIT 500`;args=d;break;case 'product-sales':sql=`SELECT pr.name,v.label,SUM(ii.quantity) AS units,SUM(ii.line_cents) AS revenue_cents,SUM((ii.unit_price_cents-ii.cost_cents)*ii.quantity) AS gross_profit_cents FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id JOIN product_variants v ON v.id=ii.variant_id JOIN products pr ON pr.id=v.product_id WHERE i.status='posted' AND i.created_at>=? AND i.created_at<=? ${scope} GROUP BY v.id ORDER BY revenue_cents DESC LIMIT 500`;args=d;break;case 'outstanding':sql=`SELECT c.shop_name,i.number,i.due_at,i.total_cents-i.paid_cents AS outstanding_cents FROM invoices i JOIN customers c ON c.id=i.customer_id WHERE i.status='posted' AND i.total_cents>i.paid_cents AND i.created_at>=? AND i.created_at<=? ${scope} ORDER BY i.due_at LIMIT 500`;args=d;break;case 'collections':sql=`SELECT pay.created_at,i.number,pay.amount_cents,pay.method FROM payments pay JOIN invoices i ON i.id=pay.invoice_id WHERE pay.created_at>=? AND pay.created_at<=? ${scope} ORDER BY pay.created_at DESC LIMIT 500`;args=d;break;case 'stock-movements':sql=`SELECT m.created_at,pr.name,v.label,m.reason,m.quantity,m.from_warehouse,m.to_warehouse FROM stock_movements m JOIN product_variants v ON v.id=m.variant_id JOIN products pr ON pr.id=v.product_id LEFT JOIN invoices i ON i.id=m.reference_id WHERE m.created_at>=? AND m.created_at<=? AND (?=1 OR i.rep_id=?) ORDER BY m.created_at DESC LIMIT 500`;args=d;break;default:return c.json({error:'Unknown report'},404);}const rows=(await db.prepare(sql).bind(...args).all()).results;return c.json(rows);});
-app.get('/api/reminders',async c=>{const denied=await guard(c,'dashboard.view');if(denied)return denied;const p=current(c);return c.json((await c.env.DB.prepare(`SELECT r.*,i.number,i.total_cents-i.paid_cents AS outstanding_cents FROM reminders r JOIN invoices i ON i.id=r.invoice_id WHERE (?=1 OR i.rep_id=?) ORDER BY r.created_at DESC LIMIT 100`).bind(p.admin,p.id).all()).results);});
-app.onError((err,c)=>{console.error(err);if(err instanceof z.ZodError||(err as any)?.name==='ZodError')return c.json({error:'Invalid input',issues:(err as any).issues?.map((x:any)=>({path:x.path,message:x.message}))},400);return c.json({error:'Request could not be completed'},500);});
-export async function processReminders(db:D1Database){const day=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Colombo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());const invoices=(await db.prepare("SELECT id,due_at,rep_id,number FROM invoices WHERE status='posted' AND due_at IS NOT NULL AND paid_cents<total_cents AND due_at>=? AND due_at<=?").bind(day,dueDate(day,14)).all<{id:string;due_at:string;rep_id:string;number:string}>()).results;for(const i of invoices){if(reminderDate(i.due_at)!==day)continue;const res=await db.prepare('INSERT OR IGNORE INTO reminders VALUES(?,?,?,?,?)').bind(uuid(),i.id,'due_soon_14d',i.due_at,now()).run();if(res.meta.changes)await db.prepare('INSERT INTO notifications VALUES(?,?,?,?,?,?)').bind(uuid(),i.rep_id,'Payment due soon',`Invoice ${i.number} is due on ${i.due_at}`,null,now()).run();}}
-export default {fetch:app.fetch,scheduled:async(_event:ScheduledEvent,env:Env['Bindings'],ctx:ExecutionContext)=>{ctx.waitUntil(processReminders(env.DB));}};
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { z } from "zod";
+import {
+  allowedOrigin,
+  audit,
+  clearCookie,
+  csrf,
+  current,
+  guard,
+  now,
+  passwordHash,
+  permission,
+  requireUser,
+  sessionCookie,
+  sha256,
+  uuid,
+  verifyPassword,
+  type Env,
+} from "./security";
+import { asCents, dueDate, lineTotal, reminderDate, sumLines } from "./finance";
+import distributionRoutes from "./distribution";
+const app = new Hono<Env>();
+const safe = z.string().trim().min(1).max(180);
+const key = z.string().min(12).max(128);
+const loginSchema = z.object({ email: z.email(), password: z.string().min(8) });
+const productSchema = z.object({
+  name: safe,
+  sku: safe,
+  barcode: z.string().max(80).optional(),
+  categoryId: z.string().optional(),
+  variants: z
+    .array(
+      z.object({
+        label: safe,
+        unit: safe,
+        grams: z.number().int().positive().optional(),
+        retailCents: z.number().int().nonnegative(),
+        wholesaleCents: z.number().int().nonnegative(),
+        shopPriceCents: z.number().int().nonnegative().default(0),
+        costCents: z.number().int().nonnegative(),
+        lowStock: z.number().int().nonnegative().default(0),
+      }),
+    )
+    .min(1),
+});
+const customerSchema = z.object({
+  shopName: safe,
+  ownerName: safe,
+  phone: z.string().max(40).default(""),
+  whatsapp: z.string().max(40).default(""),
+  address: z.string().max(300).default(""),
+  location: z.string().max(200).default(""),
+  type: z.enum(["wholesale", "retail"]),
+  creditLimitCents: z.number().int().nonnegative().default(0),
+  creditDays: z.number().int().min(0).max(45).default(0),
+  repId: z.string().optional(),
+});
+const invoiceSchema = z.object({
+  customerId: z.string().min(1),
+  warehouseId: z.string().min(1),
+  idempotencyKey: key,
+  items: z
+    .array(
+      z.object({
+        variantId: z.string().min(1),
+        quantity: z.number().int().positive(),
+      }),
+    )
+    .min(1),
+  initialPaymentCents: z.number().int().nonnegative().default(0),
+  paymentMethod: z.enum(["cash", "bank", "other"]).default("cash"),
+});
+const paymentSchema = z.object({
+  invoiceId: z.string(),
+  amountCents: z.number().int().positive(),
+  method: z.enum(["cash", "bank", "other"]),
+  idempotencyKey: key,
+});
+const json = async <T extends z.ZodTypeAny>(
+  c: any,
+  schema: T,
+): Promise<z.infer<T>> => schema.parse(await c.req.json());
+app.use("*", async (c, next) =>
+  cors({
+    origin: (origin) => (allowedOrigin(c, origin) ? origin : null),
+    credentials: true,
+    allowMethods: ["GET", "POST", "PATCH", "DELETE"],
+    allowHeaders: ["Content-Type", "Idempotency-Key"],
+  })(c, next),
+);
+app.use("*", async (c, next) => {
+  c.header("X-Content-Type-Options", "nosniff");
+  c.header("Referrer-Policy", "strict-origin-when-cross-origin");
+  c.header(
+    "Content-Security-Policy",
+    "default-src 'none'; frame-ancestors 'none'",
+  );
+  c.header("Cache-Control", "no-store");
+  if (!["GET", "HEAD", "OPTIONS"].includes(c.req.method) && !csrf(c))
+    return c.json({ error: "Invalid request origin" }, 403);
+  await next();
+});
+app.get("/api/health", (c) => c.json({ ok: true }));
+app.post("/api/setup", async (c) => {
+  const secret = c.env.SETUP_TOKEN;
+  if (!secret || c.req.header("X-Setup-Token") !== secret)
+    return c.json({ error: "Setup unavailable" }, 403);
+  const exists = await c.env.DB.prepare("SELECT id FROM users LIMIT 1").first();
+  if (exists) return c.json({ error: "Already configured" }, 409);
+  const data = await json(
+    c,
+    z.object({
+      name: safe,
+      email: z.email(),
+      password: z.string().min(8).max(200),
+    }),
+  );
+  await c.env.DB.batch([
+    c.env.DB.prepare("INSERT INTO users VALUES(?,?,?,?,?,?,?)").bind(
+      uuid(),
+      data.name,
+      data.email.toLowerCase(),
+      await passwordHash(data.password),
+      "admin",
+      1,
+      now(),
+    ),
+    c.env.DB.prepare("INSERT INTO audit_logs VALUES(?,?,?,?,?,?)").bind(
+      uuid(),
+      null,
+      "initial_setup",
+      null,
+      "",
+      now(),
+    ),
+  ]);
+  return c.json({ ok: true }, 201);
+});
+app.post("/api/login", async (c) => {
+  const { email, password } = await json(c, loginSchema);
+  const login = email.toLowerCase();
+  const db = c.env.DB;
+  const attempt = await db
+    .prepare("SELECT attempts,window_start FROM login_attempts WHERE key=?")
+    .bind(login)
+    .first<{ attempts: number; window_start: string }>();
+  if (
+    attempt &&
+    Date.now() - Date.parse(attempt.window_start) < 900000 &&
+    attempt.attempts >= 5
+  )
+    return c.json({ error: "Too many attempts. Try later." }, 429);
+  const u = await db
+    .prepare("SELECT id,password_hash,active FROM users WHERE email=?")
+    .bind(login)
+    .first<{ id: string; password_hash: string; active: number }>();
+  if (!u || !u.active || !(await verifyPassword(password, u.password_hash))) {
+    await db
+      .prepare(
+        `INSERT INTO login_attempts(key,attempts,window_start) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN window_start<? THEN 1 ELSE attempts+1 END,window_start=CASE WHEN window_start<? THEN excluded.window_start ELSE window_start END`,
+      )
+      .bind(
+        login,
+        now(),
+        new Date(Date.now() - 900000).toISOString(),
+        new Date(Date.now() - 900000).toISOString(),
+      )
+      .run();
+    return c.json({ error: "Invalid credentials" }, 401);
+  }
+  await db.prepare("DELETE FROM login_attempts WHERE key=?").bind(login).run();
+  const token = uuid() + uuid();
+  await db
+    .prepare("INSERT INTO sessions VALUES(?,?,?,?,?)")
+    .bind(
+      uuid(),
+      u.id,
+      await sha256(token),
+      new Date(Date.now() + 604800000).toISOString(),
+      now(),
+    )
+    .run();
+  c.header(
+    "Set-Cookie",
+    sessionCookie(token, new URL(c.req.url).protocol === "https:"),
+  );
+  await audit(db, u.id, "login", u.id);
+  return c.json({ ok: true });
+});
+app.use("/api/*", requireUser);
+app.route("/api", distributionRoutes);
+app.get("/api/me", async (c) => c.json({ user: current(c) }));
+app.post("/api/logout", async (c) => {
+  const token = c.req
+    .header("Cookie")
+    ?.match(/(?:^|;\s*)erp_session=([^;]+)/)?.[1];
+  if (token)
+    await c.env.DB.prepare("DELETE FROM sessions WHERE token_hash=?")
+      .bind(await sha256(token))
+      .run();
+  c.header("Set-Cookie", clearCookie(new URL(c.req.url).protocol === "https:"));
+  return c.json({ ok: true });
+});
+app.post("/api/change-password", async (c) => {
+  const p = current(c),
+    d = await json(
+      c,
+      z.object({ current: z.string(), next: z.string().min(8).max(200) }),
+    );
+  const row = await c.env.DB.prepare(
+    "SELECT password_hash FROM users WHERE id=?",
+  )
+    .bind(p.id)
+    .first<{ password_hash: string }>();
+  if (!row || !(await verifyPassword(d.current, row.password_hash)))
+    return c.json({ error: "Incorrect password" }, 403);
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE users SET password_hash=? WHERE id=?").bind(
+      await passwordHash(d.next),
+      p.id,
+    ),
+    c.env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(p.id),
+  ]);
+  c.header("Set-Cookie", clearCookie(new URL(c.req.url).protocol === "https:"));
+  return c.json({ ok: true });
+});
+app.get("/api/settings", async (c) => {
+  const denied = await guard(c, "settings.view");
+  if (denied) return denied;
+  return c.json(
+    await c.env.DB.prepare(
+      "SELECT * FROM business_settings WHERE id=1",
+    ).first(),
+  );
+});
+app.patch("/api/settings", async (c) => {
+  const denied = await guard(c, "settings.edit");
+  if (denied) return denied;
+  const d = await json(
+    c,
+    z.object({
+      name: safe,
+      address: z.string().max(300),
+      email: z.string().max(180),
+      phone: z.string().max(40),
+      whatsapp: z.string().max(40),
+    }),
+  );
+  await c.env.DB.prepare(
+    "UPDATE business_settings SET name=?,address=?,email=?,phone=?,whatsapp=? WHERE id=1",
+  )
+    .bind(d.name, d.address, d.email, d.phone, d.whatsapp)
+    .run();
+  await audit(c.env.DB, current(c).id, "business_settings", null);
+  return c.json({ ok: true });
+});
+app.get("/api/users", async (c) => {
+  if (!current(c).admin) return c.json({ error: "Forbidden" }, 403);
+  return c.json(
+    (
+      await c.env.DB.prepare(
+        "SELECT id,name,email,role_id,active,created_at FROM users ORDER BY created_at DESC LIMIT 500",
+      ).all()
+    ).results,
+  );
+});
+app.post("/api/users", async (c) => {
+  if (!current(c).admin) return c.json({ error: "Forbidden" }, 403);
+  const d = await json(
+    c,
+    z.object({
+      name: safe,
+      email: z.email(),
+      password: z.string().min(8).max(200),
+      roleId: z.string().min(1),
+    }),
+  );
+  const role = await c.env.DB.prepare("SELECT id FROM roles WHERE id=?")
+    .bind(d.roleId)
+    .first();
+  if (!role) return c.json({ error: "Invalid role" }, 400);
+  const id = uuid();
+  await c.env.DB.batch([
+    c.env.DB.prepare("INSERT INTO users VALUES(?,?,?,?,?,?,?)").bind(
+      id,
+      d.name,
+      d.email.toLowerCase(),
+      await passwordHash(d.password),
+      d.roleId,
+      1,
+      now(),
+    ),
+    c.env.DB.prepare("INSERT INTO warehouses VALUES(?,?,?)").bind(
+      uuid(),
+      `${d.name} stock`,
+      id,
+    ),
+  ]);
+  await audit(c.env.DB, current(c).id, "user.created", id);
+  return c.json({ id }, 201);
+});
+app.patch("/api/users/:id", async (c) => {
+  if (!current(c).admin) return c.json({ error: "Forbidden" }, 403);
+  const id = c.req.param("id");
+  if (id === current(c).id)
+    return c.json({ error: "Cannot change own account" }, 400);
+  const d = await json(
+    c,
+    z.object({ active: z.boolean().optional(), roleId: z.string().optional() }),
+  );
+  if (d.roleId) {
+    const r = await c.env.DB.prepare("SELECT id FROM roles WHERE id=?")
+      .bind(d.roleId)
+      .first();
+    if (!r) return c.json({ error: "Invalid role" }, 400);
+  }
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      "UPDATE users SET active=COALESCE(?,active),role_id=COALESCE(?,role_id) WHERE id=?",
+    ).bind(
+      d.active === undefined ? null : Number(d.active),
+      d.roleId ?? null,
+      id,
+    ),
+    c.env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(id),
+  ]);
+  await audit(c.env.DB, current(c).id, "user.updated", id);
+  return c.json({ ok: true });
+});
+app.get("/api/permissions", async (c) => {
+  if (!current(c).admin) return c.json({ error: "Forbidden" }, 403);
+  return c.json(
+    (await c.env.DB.prepare("SELECT * FROM permissions ORDER BY key").all())
+      .results,
+  );
+});
+app.get("/api/roles", async (c) => {
+  if (!current(c).admin) return c.json({ error: "Forbidden" }, 403);
+  return c.json(
+    (
+      await c.env.DB.prepare(
+        "SELECT r.id,r.name,r.admin,GROUP_CONCAT(rp.permission_key) AS permission_keys FROM roles r LEFT JOIN role_permissions rp ON rp.role_id=r.id GROUP BY r.id ORDER BY r.name",
+      ).all()
+    ).results,
+  );
+});
+app.post("/api/roles", async (c) => {
+  if (!current(c).admin) return c.json({ error: "Forbidden" }, 403);
+  const d = await json(
+    c,
+    z.object({ name: safe, permissionKeys: z.array(z.string()).default([]) }),
+  );
+  const db = c.env.DB,
+    id = uuid();
+  await db.batch([
+    db.prepare("INSERT INTO roles VALUES(?,?,0)").bind(id, d.name),
+    ...d.permissionKeys.map((x) =>
+      db.prepare("INSERT INTO role_permissions VALUES(?,?)").bind(id, x),
+    ),
+  ]);
+  await audit(db, current(c).id, "role.created", id);
+  return c.json({ id }, 201);
+});
+app.patch("/api/users/:id/permissions", async (c) => {
+  if (!current(c).admin) return c.json({ error: "Forbidden" }, 403);
+  const id = c.req.param("id"),
+    d = await json(
+      c,
+      z.object({ key: z.string(), allowed: z.boolean().nullable() }),
+    ),
+    db = c.env.DB;
+  if (d.allowed === null)
+    await db
+      .prepare(
+        "DELETE FROM user_permissions WHERE user_id=? AND permission_key=?",
+      )
+      .bind(id, d.key)
+      .run();
+  else
+    await db
+      .prepare(
+        "INSERT INTO user_permissions VALUES(?,?,?) ON CONFLICT(user_id,permission_key) DO UPDATE SET allowed=excluded.allowed",
+      )
+      .bind(id, d.key, Number(d.allowed))
+      .run();
+  await audit(db, current(c).id, "permission.changed", id, d.key);
+  return c.json({ ok: true });
+});
+app.post("/api/users/:id/reset-password", async (c) => {
+  if (!current(c).admin) return c.json({ error: "Forbidden" }, 403);
+  const id = c.req.param("id"),
+    d = await json(c, z.object({ newPassword: z.string().min(8).max(200) }));
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE users SET password_hash=? WHERE id=?").bind(
+      await passwordHash(d.newPassword),
+      id,
+    ),
+    c.env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(id),
+  ]);
+  await audit(c.env.DB, current(c).id, "password.reset", id);
+  return c.json({ ok: true });
+});
+app.get("/api/products", async (c) => {
+  const denied = await guard(c, "products.view");
+  if (denied) return denied;
+  return c.json(
+    (
+      await c.env.DB.prepare(
+        "SELECT p.id,p.name,p.sku,p.barcode,p.active,v.id AS variant_id,v.label,v.unit,v.grams,v.retail_cents,v.wholesale_cents,v.shop_price_cents,v.low_stock,COALESCE(s.quantity,0) AS main_stock FROM products p JOIN product_variants v ON v.product_id=p.id LEFT JOIN stock_balances s ON s.variant_id=v.id AND s.warehouse_id=? ORDER BY p.name LIMIT 500",
+      )
+        .bind("main")
+        .all()
+    ).results,
+  );
+});
+app.post("/api/products", async (c) => {
+  if (!current(c).admin) return c.json({ error: "Admin only" }, 403);
+  const d = await json(c, productSchema),
+    db = c.env.DB,
+    id = uuid();
+  const stmts = [
+    db
+      .prepare(
+        "INSERT INTO products(id,category_id,name,sku,barcode,active,created_at) VALUES(?,?,?,?,?,1,?)",
+      )
+      .bind(id, d.categoryId ?? null, d.name, d.sku, d.barcode ?? null, now()),
+    ...d.variants.map((v) =>
+      db
+        .prepare(
+          "INSERT INTO product_variants(id,product_id,label,unit,grams,retail_cents,wholesale_cents,cost_cents,low_stock,shop_price_cents) VALUES(?,?,?,?,?,?,?,?,?,?)",
+        )
+        .bind(
+          uuid(),
+          id,
+          v.label,
+          v.unit,
+          v.grams ?? null,
+          v.retailCents,
+          v.wholesaleCents,
+          v.costCents,
+          v.lowStock,
+          v.shopPriceCents,
+        ),
+    ),
+  ];
+  await db.batch(stmts);
+  await audit(db, current(c).id, "product.created", id);
+  return c.json({ id }, 201);
+});
+app.get("/api/customers", async (c) => {
+  const denied = await guard(c, "customers.view");
+  if (denied) return denied;
+  const p = current(c);
+  const q =
+    p.admin || (await permission(c, p, "customers.view_all"))
+      ? "SELECT * FROM customers ORDER BY created_at DESC LIMIT 500"
+      : "SELECT c.* FROM customers c JOIN customer_assignments a ON a.customer_id=c.id WHERE a.rep_id=? ORDER BY c.created_at DESC LIMIT 500";
+  return c.json(
+    (
+      await c.env.DB.prepare(q)
+        .bind(...(q.includes("a.rep_id=?") ? [p.id] : []))
+        .all()
+    ).results,
+  );
+});
+app.post("/api/customers", async (c) => {
+  const denied = await guard(c, "customers.create");
+  if (denied) return denied;
+  const d = await json(c, customerSchema),
+    p = current(c),
+    id = uuid(),
+    db = c.env.DB;
+  if (
+    !p.admin &&
+    ((d.repId && d.repId !== p.id) ||
+      d.creditLimitCents > 0 ||
+      d.creditDays > 0)
+  )
+    return c.json(
+      { error: "Admin approval required for credit or assignment" },
+      403,
+    );
+  const rep = p.admin ? d.repId : p.id;
+  await db.batch([
+    db
+      .prepare("INSERT INTO customers VALUES(?,?,?,?,?,?,?,?,?,?,?,?)")
+      .bind(
+        id,
+        d.shopName,
+        d.ownerName,
+        d.phone,
+        d.whatsapp,
+        d.address,
+        d.location,
+        d.type,
+        d.creditLimitCents,
+        d.creditDays,
+        1,
+        now(),
+      ),
+    ...(rep
+      ? [
+          db
+            .prepare("INSERT INTO customer_assignments VALUES(?,?)")
+            .bind(id, rep),
+        ]
+      : []),
+  ]);
+  await audit(db, p.id, "customer.created", id);
+  return c.json({ id }, 201);
+});
+app.post("/api/stock/adjust", async (c) => {
+  if (!current(c).admin) return c.json({ error: "Admin only" }, 403);
+  const d = await json(
+    c,
+    z.object({
+      warehouseId: z.string(),
+      variantId: z.string(),
+      delta: z
+        .number()
+        .int()
+        .refine((x) => x !== 0),
+      reason: safe,
+    }),
+  );
+  const db = c.env.DB,
+    id = uuid(),
+    from = d.delta < 0 ? d.warehouseId : null,
+    to = d.delta > 0 ? d.warehouseId : null;
+  await db.batch([
+    db
+      .prepare("INSERT INTO stock_movements VALUES(?,?,?,?,?,?,?,?)")
+      .bind(
+        id,
+        d.variantId,
+        from,
+        to,
+        Math.abs(d.delta),
+        d.reason,
+        null,
+        now(),
+      ),
+    db
+      .prepare(
+        "INSERT INTO stock_balances VALUES(?,?,?) ON CONFLICT(warehouse_id,variant_id) DO UPDATE SET quantity=quantity+excluded.quantity",
+      )
+      .bind(d.warehouseId, d.variantId, d.delta),
+  ]);
+  await audit(db, current(c).id, "stock.adjusted", id);
+  return c.json({ id }, 201);
+});
+app.post("/api/stock/transfer", async (c) => {
+  const denied = await guard(c, "stock.allocate");
+  if (denied) return denied;
+  const d = await json(
+    c,
+    z.object({
+      from: z.string(),
+      to: z.string(),
+      variantId: z.string(),
+      quantity: z.number().int().positive(),
+    }),
+  );
+  if (d.from === d.to)
+    return c.json({ error: "Select different warehouses" }, 400);
+  const db = c.env.DB,
+    id = uuid();
+  await db.batch([
+    db
+      .prepare("INSERT INTO stock_movements VALUES(?,?,?,?,?,?,?,?)")
+      .bind(id, d.variantId, d.from, d.to, d.quantity, "transfer", null, now()),
+    db
+      .prepare(
+        "UPDATE stock_balances SET quantity=quantity-? WHERE warehouse_id=? AND variant_id=?",
+      )
+      .bind(d.quantity, d.from, d.variantId),
+    db
+      .prepare(
+        "INSERT INTO stock_balances VALUES(?,?,?) ON CONFLICT(warehouse_id,variant_id) DO UPDATE SET quantity=quantity+excluded.quantity",
+      )
+      .bind(d.to, d.variantId, d.quantity),
+  ]);
+  await audit(db, current(c).id, "stock.transferred", id);
+  return c.json({ id }, 201);
+});
+app.get("/api/stock", async (c) => {
+  const denied = await guard(c, "stock.view");
+  if (denied) return denied;
+  const p = current(c);
+  return c.json(
+    (
+      await c.env.DB.prepare(
+        `SELECT b.*,v.label,p.name,w.name AS warehouse FROM stock_balances b JOIN product_variants v ON v.id=b.variant_id JOIN products p ON p.id=v.product_id JOIN warehouses w ON w.id=b.warehouse_id WHERE (?=1 OR w.rep_id=?) ORDER BY p.name LIMIT 500`,
+      )
+        .bind(p.admin, p.id)
+        .all()
+    ).results,
+  );
+});
+app.post("/api/invoices", async (c) => {
+  const denied = await guard(c, "invoices.create");
+  if (denied) return denied;
+  const d = await json(c, invoiceSchema),
+    db = c.env.DB,
+    p = current(c),
+    existing = await db
+      .prepare("SELECT id,number FROM invoices WHERE idempotency_key=?")
+      .bind(d.idempotencyKey)
+      .first();
+  if (existing) return c.json(existing);
+  const customer = await db
+    .prepare("SELECT * FROM customers WHERE id=? AND active=1")
+    .bind(d.customerId)
+    .first<{
+      id: string;
+      type: string;
+      credit_days: number;
+      credit_limit_cents: number;
+    }>();
+  if (!customer) return c.json({ error: "Customer unavailable" }, 404);
+  if (!p.admin) {
+    const assigned = await db
+      .prepare(
+        "SELECT 1 FROM customer_assignments WHERE customer_id=? AND rep_id=?",
+      )
+      .bind(d.customerId, p.id)
+      .first();
+    if (!assigned) return c.json({ error: "Customer not assigned" }, 403);
+    const wh = await db
+      .prepare("SELECT 1 FROM warehouses WHERE id=? AND rep_id=?")
+      .bind(d.warehouseId, p.id)
+      .first();
+    if (!wh) return c.json({ error: "Warehouse not assigned" }, 403);
+  }
+  if (new Set(d.items.map((x) => x.variantId)).size !== d.items.length)
+    return c.json({ error: "Duplicate variants in invoice" }, 400);
+  const items = [] as {
+    variantId: string;
+    quantity: number;
+    unitPriceCents: number;
+    costCents: number;
+  }[];
+  for (const x of d.items) {
+    const v = await db
+      .prepare(
+        "SELECT v.retail_cents,v.wholesale_cents,v.cost_cents FROM product_variants v JOIN products p ON p.id=v.product_id WHERE v.id=? AND p.active=1",
+      )
+      .bind(x.variantId)
+      .first<{
+        retail_cents: number;
+        wholesale_cents: number;
+        cost_cents: number;
+      }>();
+    if (!v) return c.json({ error: "Variant unavailable" }, 400);
+    items.push({
+      variantId: x.variantId,
+      quantity: x.quantity,
+      unitPriceCents:
+        customer.type === "wholesale" ? v.wholesale_cents : v.retail_cents,
+      costCents: v.cost_cents,
+    });
+  }
+  const total = sumLines(
+    items.map((x) => ({
+      unitPriceCents: x.unitPriceCents,
+      quantity: x.quantity,
+    })),
+  );
+  if (d.initialPaymentCents > total)
+    return c.json({ error: "Initial payment exceeds total" }, 400);
+  const days = customer.credit_days;
+  const outstanding = total - d.initialPaymentCents;
+  if (outstanding && days === 0)
+    return c.json({ error: "Customer has no credit terms" }, 400);
+  const date = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Colombo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const due = outstanding ? dueDate(date, days) : null;
+  const id = uuid();
+  const number = `SD-${date.replaceAll("-", "")}-${id.slice(0, 8).toUpperCase()}`;
+  const created = now();
+  const statements = [
+    db
+      .prepare(
+        "INSERT INTO invoices(id,number,customer_id,rep_id,warehouse_id,total_cents,paid_cents,status,due_at,idempotency_key,created_at,cancelled_at,subtotal_cents,item_discount_cents,invoice_discount_cents,payment_method,payment_terms,notes,terms,source_type,source_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      )
+      .bind(
+        id,
+        number,
+        d.customerId,
+        p.id,
+        d.warehouseId,
+        total,
+        d.initialPaymentCents,
+        "posted",
+        due,
+        d.idempotencyKey,
+        created,
+        null,
+        total,
+        0,
+        0,
+        d.paymentMethod,
+        "",
+        "",
+        "",
+        "sale",
+        null,
+      ),
+    ...items.flatMap((x) => [
+      db
+        .prepare("INSERT INTO stock_movements VALUES(?,?,?,?,?,?,?,?)")
+        .bind(
+          uuid(),
+          x.variantId,
+          d.warehouseId,
+          null,
+          x.quantity,
+          "sale",
+          id,
+          created,
+        ),
+      db
+        .prepare(
+          "UPDATE stock_balances SET quantity=quantity-? WHERE warehouse_id=? AND variant_id=?",
+        )
+        .bind(x.quantity, d.warehouseId, x.variantId),
+      db
+        .prepare(
+          "INSERT INTO invoice_items(id,invoice_id,variant_id,quantity,unit_price_cents,cost_cents,line_cents,price_type,item_discount_cents,shop_price_cents) VALUES(?,?,?,?,?,?,?,?,?,?)",
+        )
+        .bind(
+          uuid(),
+          id,
+          x.variantId,
+          x.quantity,
+          x.unitPriceCents,
+          x.costCents,
+          lineTotal(x.unitPriceCents, x.quantity),
+          customer.type === "wholesale" ? "wholesale" : "retail",
+          0,
+          0,
+        ),
+    ]),
+    ...(d.initialPaymentCents
+      ? [
+          db
+            .prepare("INSERT INTO payments VALUES(?,?,?,?,?,?,?)")
+            .bind(
+              uuid(),
+              id,
+              d.initialPaymentCents,
+              d.paymentMethod,
+              `${d.idempotencyKey}:initial`,
+              p.id,
+              created,
+            ),
+        ]
+      : []),
+  ];
+  try {
+    await db.batch(statements);
+  } catch (e) {
+    const previous = await db
+      .prepare("SELECT id,number FROM invoices WHERE idempotency_key=?")
+      .bind(d.idempotencyKey)
+      .first();
+    if (previous) return c.json(previous);
+    throw e;
+  }
+  await audit(db, p.id, "invoice.posted", id);
+  return c.json(
+    {
+      id,
+      number,
+      totalCents: total,
+      paidCents: d.initialPaymentCents,
+      dueAt: due,
+    },
+    201,
+  );
+});
+app.get("/api/invoices", async (c) => {
+  const denied = await guard(c, "invoices.view");
+  if (denied) return denied;
+  const p = current(c);
+  return c.json(
+    (
+      await c.env.DB.prepare(
+        `SELECT i.id,i.number,i.total_cents,i.paid_cents,i.due_at,i.status,i.created_at,c.shop_name FROM invoices i JOIN customers c ON c.id=i.customer_id WHERE (?=1 OR i.rep_id=?) ORDER BY i.created_at DESC LIMIT 200`,
+      )
+        .bind(p.admin, p.id)
+        .all()
+    ).results,
+  );
+});
+app.get("/api/invoices/:id", async (c) => {
+  const denied = await guard(c, "invoices.view");
+  if (denied) return denied;
+  const p = current(c),
+    id = c.req.param("id"),
+    db = c.env.DB;
+  const invoice = await db
+    .prepare(
+      `SELECT i.*,c.shop_name,c.address,c.whatsapp,b.name AS business_name,b.address AS business_address,b.phone AS business_phone,b.whatsapp AS business_whatsapp,b.email AS business_email FROM invoices i JOIN customers c ON c.id=i.customer_id CROSS JOIN business_settings b WHERE i.id=? AND (?=1 OR i.rep_id=?)`,
+    )
+    .bind(id, p.admin, p.id)
+    .first();
+  if (!invoice) return c.json({ error: "Not found" }, 404);
+  const items = (
+    await db
+      .prepare(
+        "SELECT ii.*,p.name,v.label FROM invoice_items ii JOIN product_variants v ON v.id=ii.variant_id JOIN products p ON p.id=v.product_id WHERE invoice_id=?",
+      )
+      .bind(id)
+      .all()
+  ).results;
+  return c.json({ invoice, items });
+});
+app.post("/api/invoices/:id/cancel", async (c) => {
+  if (!current(c).admin) return c.json({ error: "Admin only" }, 403);
+  const id = c.req.param("id"),
+    db = c.env.DB,
+    invoice = await db
+      .prepare("SELECT * FROM invoices WHERE id=?")
+      .bind(id)
+      .first<{ status: string; paid_cents: number; warehouse_id: string }>();
+  if (!invoice || invoice.status !== "posted")
+    return c.json({ error: "Invoice not found or already cancelled" }, 404);
+  if (invoice.paid_cents)
+    return c.json(
+      { error: "Refund recorded payments before cancellation" },
+      409,
+    );
+  const items = (
+    await db
+      .prepare(
+        "SELECT variant_id,quantity FROM invoice_items WHERE invoice_id=?",
+      )
+      .bind(id)
+      .all<{ variant_id: string; quantity: number }>()
+  ).results;
+  await db.batch([
+    db
+      .prepare(
+        "UPDATE invoices SET status='cancelled',cancelled_at=? WHERE id=? AND status='posted' AND paid_cents=0",
+      )
+      .bind(now(), id),
+    ...items.flatMap((x) => [
+      db
+        .prepare("INSERT INTO stock_movements VALUES(?,?,?,?,?,?,?,?)")
+        .bind(
+          uuid(),
+          x.variant_id,
+          null,
+          invoice.warehouse_id,
+          x.quantity,
+          "invoice_reversal",
+          id,
+          now(),
+        ),
+      db
+        .prepare(
+          "INSERT INTO stock_balances VALUES(?,?,?) ON CONFLICT(warehouse_id,variant_id) DO UPDATE SET quantity=quantity+excluded.quantity",
+        )
+        .bind(invoice.warehouse_id, x.variant_id, x.quantity),
+    ]),
+  ]);
+  await audit(db, current(c).id, "invoice.cancelled", id);
+  return c.json({ ok: true });
+});
+app.post("/api/payments", async (c) => {
+  const denied = await guard(c, "payments.create");
+  if (denied) return denied;
+  const d = await json(c, paymentSchema),
+    db = c.env.DB,
+    p = current(c),
+    existing = await db
+      .prepare("SELECT id FROM payments WHERE idempotency_key=?")
+      .bind(d.idempotencyKey)
+      .first();
+  if (existing) return c.json(existing);
+  const i = await db
+    .prepare("SELECT * FROM invoices WHERE id=? AND status=?")
+    .bind(d.invoiceId, "posted")
+    .first<{
+      id: string;
+      rep_id: string;
+      paid_cents: number;
+      total_cents: number;
+    }>();
+  if (!i) return c.json({ error: "Invoice unavailable" }, 404);
+  if (!p.admin && i.rep_id !== p.id)
+    return c.json({ error: "Not your invoice" }, 403);
+  if (d.amountCents > i.total_cents - i.paid_cents)
+    return c.json({ error: "Amount exceeds outstanding" }, 400);
+  const id = uuid();
+  try {
+    await db.batch([
+      db
+        .prepare(
+          "UPDATE invoices SET paid_cents=paid_cents+? WHERE id=? AND status=? AND total_cents-paid_cents>=?",
+        )
+        .bind(d.amountCents, i.id, "posted", d.amountCents),
+      db
+        .prepare("INSERT INTO payments VALUES(?,?,?,?,?,?,?)")
+        .bind(id, i.id, d.amountCents, d.method, d.idempotencyKey, p.id, now()),
+    ]);
+  } catch (e) {
+    const prev = await db
+      .prepare("SELECT id FROM payments WHERE idempotency_key=?")
+      .bind(d.idempotencyKey)
+      .first();
+    if (prev) return c.json(prev);
+    throw e;
+  }
+  await audit(db, p.id, "payment.recorded", id);
+  return c.json({ id }, 201);
+});
+app.get("/api/dashboard", async (c) => {
+  const denied = await guard(c, "dashboard.view");
+  if (denied) return denied;
+  const p = current(c),
+    db = c.env.DB,
+    scope = p.admin ? "1=1" : "rep_id=?",
+    args = p.admin ? [] : [p.id];
+  const localDay = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Colombo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const start = new Date(
+    Date.parse(`${localDay}T00:00:00Z`) - 19800000,
+  ).toISOString();
+  const month = new Date(
+    Date.parse(`${localDay.slice(0, 7)}-01T00:00:00Z`) - 19800000,
+  ).toISOString();
+  const [sales, today, monthly, outstanding, overdue, shops, reps, low] =
+    await Promise.all([
+      db
+        .prepare(
+          `SELECT COALESCE(SUM(total_cents),0) AS amount FROM invoices WHERE status='posted' AND ${scope}`,
+        )
+        .bind(...args)
+        .first(),
+      db
+        .prepare(
+          `SELECT COALESCE(SUM(total_cents),0) AS amount FROM invoices WHERE status='posted' AND created_at>=? AND ${scope}`,
+        )
+        .bind(start, ...args)
+        .first(),
+      db
+        .prepare(
+          `SELECT COALESCE(SUM(total_cents),0) AS amount FROM invoices WHERE status='posted' AND created_at>=? AND ${scope}`,
+        )
+        .bind(month, ...args)
+        .first(),
+      db
+        .prepare(
+          `SELECT COALESCE(SUM(total_cents-paid_cents),0) AS amount FROM invoices WHERE status='posted' AND ${scope}`,
+        )
+        .bind(...args)
+        .first(),
+      db
+        .prepare(
+          `SELECT COALESCE(SUM(total_cents-paid_cents),0) AS amount FROM invoices WHERE status='posted' AND due_at<? AND ${scope}`,
+        )
+        .bind(localDay, ...args)
+        .first(),
+      db
+        .prepare(
+          p.admin
+            ? "SELECT COUNT(*) AS count FROM customers WHERE active=1"
+            : "SELECT COUNT(*) AS count FROM customer_assignments a JOIN customers c ON c.id=a.customer_id WHERE c.active=1 AND a.rep_id=?",
+        )
+        .bind(...args)
+        .first(),
+      p.admin
+        ? db
+            .prepare(
+              "SELECT COUNT(*) AS count FROM users WHERE role_id='sales_rep' AND active=1",
+            )
+            .first()
+        : Promise.resolve({ count: 0 }),
+      db
+        .prepare(
+          `SELECT COUNT(*) AS count FROM stock_balances b JOIN product_variants v ON v.id=b.variant_id JOIN warehouses w ON w.id=b.warehouse_id WHERE b.quantity<=v.low_stock AND (?=1 OR w.rep_id=?)`,
+        )
+        .bind(p.admin, p.id)
+        .first(),
+    ]);
+  return c.json({
+    totalSalesCents: (sales as any)?.amount ?? 0,
+    todaySalesCents: (today as any)?.amount ?? 0,
+    monthlySalesCents: (monthly as any)?.amount ?? 0,
+    outstandingCents: (outstanding as any)?.amount ?? 0,
+    overdueCents: (overdue as any)?.amount ?? 0,
+    activeShops: (shops as any)?.count ?? 0,
+    activeReps: (reps as any)?.count ?? 0,
+    lowStock: (low as any)?.count ?? 0,
+  });
+});
+app.get("/api/reports/summary", async (c) => {
+  const denied = await guard(c, "reports.view");
+  if (denied) return denied;
+  const p = current(c),
+    db = c.env.DB;
+  const from = c.req.query("from") || "2000-01-01",
+    to = c.req.query("to") || "2100-01-01";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to))
+    return c.json({ error: "Invalid date filter" }, 400);
+  const q = await db
+    .prepare(
+      `SELECT COALESCE(SUM(i.total_cents),0) AS invoiced_cents,COALESCE(SUM(i.paid_cents),0) AS collected_cents,COALESCE(SUM(i.total_cents-i.paid_cents),0) AS receivables_cents,COALESCE(SUM((SELECT SUM((ii.unit_price_cents-ii.cost_cents)*ii.quantity) FROM invoice_items ii WHERE ii.invoice_id=i.id)),0) AS gross_profit_cents FROM invoices i WHERE i.status='posted' AND i.created_at>=? AND i.created_at<? AND (?=1 OR i.rep_id=?)`,
+    )
+    .bind(`${from}T00:00:00`, `${to}T23:59:59`, p.admin, p.id)
+    .first();
+  return c.json(q);
+});
+app.get("/api/reports/:kind", async (c) => {
+  const denied = await guard(c, "reports.view");
+  if (denied) return denied;
+  const kind = c.req.param("kind"),
+    db = c.env.DB,
+    p = current(c),
+    from = c.req.query("from") || "2000-01-01",
+    to = c.req.query("to") || "2100-01-01";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to))
+    return c.json({ error: "Invalid date range" }, 400);
+  let sql = "";
+  let args: (string | number)[] = [];
+  const scope = " AND (?=1 OR i.rep_id=?)";
+  const d = [`${from}T00:00:00`, `${to}T23:59:59`, p.admin, p.id];
+  switch (kind) {
+    case "daily-sales":
+      sql = `SELECT substr(i.created_at,1,10) AS date,COUNT(*) AS invoices,SUM(i.total_cents) AS invoiced_cents,SUM(i.paid_cents) AS collected_cents FROM invoices i WHERE i.status='posted' AND i.created_at>=? AND i.created_at<=? ${scope} GROUP BY date ORDER BY date DESC LIMIT 500`;
+      args = d;
+      break;
+    case "product-sales":
+      sql = `SELECT pr.name,v.label,SUM(ii.quantity) AS units,SUM(ii.line_cents) AS revenue_cents,SUM((ii.unit_price_cents-ii.cost_cents)*ii.quantity) AS gross_profit_cents FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id JOIN product_variants v ON v.id=ii.variant_id JOIN products pr ON pr.id=v.product_id WHERE i.status='posted' AND i.created_at>=? AND i.created_at<=? ${scope} GROUP BY v.id ORDER BY revenue_cents DESC LIMIT 500`;
+      args = d;
+      break;
+    case "outstanding":
+      sql = `SELECT c.shop_name,i.number,i.due_at,i.total_cents-i.paid_cents AS outstanding_cents FROM invoices i JOIN customers c ON c.id=i.customer_id WHERE i.status='posted' AND i.total_cents>i.paid_cents AND i.created_at>=? AND i.created_at<=? ${scope} ORDER BY i.due_at LIMIT 500`;
+      args = d;
+      break;
+    case "collections":
+      sql = `SELECT pay.created_at,i.number,pay.amount_cents,pay.method FROM payments pay JOIN invoices i ON i.id=pay.invoice_id WHERE pay.created_at>=? AND pay.created_at<=? ${scope} ORDER BY pay.created_at DESC LIMIT 500`;
+      args = d;
+      break;
+    case "stock-movements":
+      sql = `SELECT m.created_at,pr.name,v.label,m.reason,m.quantity,m.from_warehouse,m.to_warehouse FROM stock_movements m JOIN product_variants v ON v.id=m.variant_id JOIN products pr ON pr.id=v.product_id LEFT JOIN invoices i ON i.id=m.reference_id WHERE m.created_at>=? AND m.created_at<=? AND (?=1 OR i.rep_id=?) ORDER BY m.created_at DESC LIMIT 500`;
+      args = d;
+      break;
+    default:
+      return c.json({ error: "Unknown report" }, 404);
+  }
+  const rows = (
+    await db
+      .prepare(sql)
+      .bind(...args)
+      .all()
+  ).results;
+  return c.json(rows);
+});
+app.get("/api/reminders", async (c) => {
+  const denied = await guard(c, "dashboard.view");
+  if (denied) return denied;
+  const p = current(c);
+  return c.json(
+    (
+      await c.env.DB.prepare(
+        `SELECT r.*,i.number,i.total_cents-i.paid_cents AS outstanding_cents FROM reminders r JOIN invoices i ON i.id=r.invoice_id WHERE (?=1 OR i.rep_id=?) ORDER BY r.created_at DESC LIMIT 100`,
+      )
+        .bind(p.admin, p.id)
+        .all()
+    ).results,
+  );
+});
+app.onError((err, c) => {
+  console.error(err);
+  if (err instanceof z.ZodError || (err as any)?.name === "ZodError")
+    return c.json(
+      {
+        error: "Invalid input",
+        issues: (err as any).issues?.map((x: any) => ({
+          path: x.path,
+          message: x.message,
+        })),
+      },
+      400,
+    );
+  return c.json({ error: "Request could not be completed" }, 500);
+});
+export async function processReminders(db: D1Database) {
+  const day = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Colombo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const invoices = (
+    await db
+      .prepare(
+        "SELECT id,due_at,rep_id,number FROM invoices WHERE status='posted' AND due_at IS NOT NULL AND paid_cents<total_cents AND due_at>=? AND due_at<=?",
+      )
+      .bind(day, dueDate(day, 14))
+      .all<{ id: string; due_at: string; rep_id: string; number: string }>()
+  ).results;
+  for (const i of invoices) {
+    if (reminderDate(i.due_at) !== day) continue;
+    const res = await db
+      .prepare("INSERT OR IGNORE INTO reminders VALUES(?,?,?,?,?)")
+      .bind(uuid(), i.id, "due_soon_14d", i.due_at, now())
+      .run();
+    if (res.meta.changes)
+      await db
+        .prepare("INSERT INTO notifications VALUES(?,?,?,?,?,?)")
+        .bind(
+          uuid(),
+          i.rep_id,
+          "Payment due soon",
+          `Invoice ${i.number} is due on ${i.due_at}`,
+          null,
+          now(),
+        )
+        .run();
+  }
+}
+export default {
+  fetch: app.fetch,
+  scheduled: async (
+    _event: ScheduledEvent,
+    env: Env["Bindings"],
+    ctx: ExecutionContext,
+  ) => {
+    ctx.waitUntil(processReminders(env.DB));
+  },
+};
