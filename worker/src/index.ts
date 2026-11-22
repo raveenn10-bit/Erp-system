@@ -20,6 +20,7 @@ import {
 } from "./security";
 import { asCents, dueDate, lineTotal, reminderDate, sumLines } from "./finance";
 import distributionRoutes from "./distribution";
+import creditAlertsRoutes, { processReminders } from "./credit-alerts";
 import { renderPublicInvoiceHtml } from "./public-invoice";
 const app = new Hono<Env>();
 const safe = z.string().trim().min(1).max(180);
@@ -240,6 +241,7 @@ app.get("/api/public/invoices/:token", async (c) => {
 
 app.use("/api/*", requireUser);
 app.route("/api", distributionRoutes);
+app.route("/api", creditAlertsRoutes);
 app.get("/api/me", async (c) => c.json({ user: current(c) }));
 app.post("/api/logout", async (c) => {
   const token = c.req
@@ -1397,41 +1399,6 @@ app.onError((err, c) => {
     );
   return c.json({ error: "Request could not be completed" }, 500);
 });
-export async function processReminders(db: D1Database) {
-  const day = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Colombo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-  const invoices = (
-    await db
-      .prepare(
-        "SELECT id,due_at,rep_id,number FROM invoices WHERE status='posted' AND due_at IS NOT NULL AND paid_cents<total_cents AND due_at>=? AND due_at<=?",
-      )
-      .bind(day, dueDate(day, 14))
-      .all<{ id: string; due_at: string; rep_id: string; number: string }>()
-  ).results;
-  for (const i of invoices) {
-    if (reminderDate(i.due_at) !== day) continue;
-    const res = await db
-      .prepare("INSERT OR IGNORE INTO reminders VALUES(?,?,?,?,?)")
-      .bind(uuid(), i.id, "due_soon_14d", i.due_at, now())
-      .run();
-    if (res.meta.changes)
-      await db
-        .prepare("INSERT INTO notifications VALUES(?,?,?,?,?,?)")
-        .bind(
-          uuid(),
-          i.rep_id,
-          "Payment due soon",
-          `Invoice ${i.number} is due on ${i.due_at}`,
-          null,
-          now(),
-        )
-        .run();
-  }
-}
 export default {
   fetch: app.fetch,
   scheduled: async (

@@ -46,6 +46,11 @@ import {
 import { api, idempotency, money } from "@/lib/api";
 import { InvoiceActions } from "@/components/invoice-actions";
 import {
+  NotificationBellAndDrawer,
+  CreditAlertsDashboardPanel,
+  CreditAlertSettingsPanel,
+} from "@/components/notification-alerts";
+import {
   CustomerAccountModal,
   ExpensesPanel,
   CreditNotesPanel,
@@ -118,6 +123,7 @@ const menu = [
   { name: "Free Issues", icon: Gift },
   { name: "Consignments", icon: PackageCheck },
   { name: "Payments", icon: CreditCard },
+  { name: "Credit Alerts", icon: Bell },
   { name: "Expenses", icon: ArrowDownLeft },
   { name: "Returns", icon: RotateCcw },
   { name: "Reports", icon: BarChart3 },
@@ -228,7 +234,7 @@ function Workspace() {
     );
   if (!user) return null;
   const visibleMenu = menu.filter(
-    (i) => user.admin || !["Team", "Settings", "Reports", "Expenses", "Returns"].includes(i.name),
+    (i) => user.admin || !["Team", "Settings", "Reports", "Expenses"].includes(i.name),
   );
   return (
     <div className="app-shell">
@@ -727,6 +733,19 @@ function Workspace() {
               </FormPanel>
             </>
           )}
+          {tab === "Credit Alerts" && (
+            <>
+              <Lead
+                title="ණය මතක් කිරීම් (Credit Alerts & Reminders)"
+                subtitle="ස්වයංක්‍රීය ණය මතක් කිරීම්, ප්‍රමාද වූ බිල්පත් සහ WhatsApp සන්නිවේදනය."
+              />
+              <CreditAlertsDashboardPanel
+                onViewInvoice={setInvoiceId}
+                onViewCustomer={setCustomerAccountId}
+                isAdmin={!!user.admin}
+              />
+            </>
+          )}
           {tab === "Expenses" && (
             <>
               <Lead
@@ -814,6 +833,7 @@ function Workspace() {
               <FormPanel title="Invoice print settings">
                 <BillingSettings />
               </FormPanel>
+              <CreditAlertSettingsPanel />
               <div style={{ marginTop: 20 }}>
                 <ChangePasswordPanel />
               </div>
