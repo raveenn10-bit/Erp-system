@@ -1,21 +1,28 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Check,
+  Eye,
   FileDown,
   MessageCircle,
   Plus,
   Printer,
+  Receipt,
   RotateCcw,
+  Settings,
   Trash2,
 } from "lucide-react";
 import { api, formatWhatsApp, idempotency, money, normalizeWhatsApp } from "@/lib/api";
+import { InvoicePreviewModal, InvoiceViewData } from "./invoice-designer";
+import { saveThermalSettings } from "@/lib/thermal-printer";
 
 export type Product = {
   variant_id: string;
   name: string;
   label: string;
   unit: string;
+  sku?: string;
   wholesale_cents: number;
   retail_cents: number;
   shop_price_cents: number;
@@ -25,6 +32,7 @@ export type Customer = {
   shop_name: string;
   address?: string;
   phone?: string;
+  whatsapp?: string;
   credit_days: number;
 };
 export type Stock = {
@@ -58,51 +66,257 @@ export function BillingSettings() {
   });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [paperWidth, setPaperWidth] = useState<string>("58mm");
+
+  useEffect(() => {
+    if (settings.data?.thermal_paper_width) {
+      setPaperWidth(settings.data.thermal_paper_width);
+    }
+  }, [settings.data]);
+
   if (!settings.data) return <div className="loader" />;
+
   async function save(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const d = new FormData(e.currentTarget);
     setBusy(true);
     setMessage("");
     try {
+      const payload = {
+        showShopPrice: d.get("showShopPrice") === "on",
+        showCustomerWhatsapp: d.get("showCustomerWhatsapp") === "on",
+        defaultTerms: String(d.get("defaultTerms") || ""),
+        accentColor: String(d.get("accentColor") || "#16a34a"),
+        thermalPrinterName: String(d.get("thermalPrinterName") || "Bluetooth Thermal POS"),
+        thermalPaperWidth: String(d.get("thermalPaperWidth") || "58mm") as any,
+        thermalCustomWidthMm: Number(d.get("thermalCustomWidthMm") || 58),
+        thermalFontSize: String(d.get("thermalFontSize") || "normal") as any,
+        thermalTextDensity: String(d.get("thermalTextDensity") || "normal") as any,
+        thermalShowLogo: d.get("thermalShowLogo") === "on",
+        thermalShowQr: d.get("thermalShowQr") === "on",
+        thermalAutoCut: d.get("thermalAutoCut") === "on",
+        thermalCopies: Number(d.get("thermalCopies") || 1),
+        thermalDefaultMode: String(d.get("thermalDefaultMode") || "browser") as any,
+        whatsappTemplate: String(d.get("whatsappTemplate") || ""),
+      };
+
       await api("/billing/settings", {
         method: "PATCH",
-        body: JSON.stringify({
-          showShopPrice: d.get("showShopPrice") === "on",
-          defaultTerms: String(d.get("defaultTerms") || ""),
-        }),
+        body: JSON.stringify(payload),
       });
+
+      // Also persist to local thermal printer cache
+      saveThermalSettings({
+        printerName: payload.thermalPrinterName,
+        paperWidth: payload.thermalPaperWidth,
+        customWidthMm: payload.thermalCustomWidthMm,
+        fontSize: payload.thermalFontSize,
+        textDensity: payload.thermalTextDensity,
+        showLogo: payload.thermalShowLogo,
+        showQr: payload.thermalShowQr,
+        autoCut: payload.thermalAutoCut,
+        copies: payload.thermalCopies,
+        defaultMode: payload.thermalDefaultMode,
+      });
+
       await client.invalidateQueries({ queryKey: ["billing-settings"] });
-      setMessage("Billing settings saved.");
+      setMessage("Invoice & Printing settings saved successfully.");
     } catch (error) {
       setMessage((error as Error).message);
     } finally {
       setBusy(false);
     }
   }
+
+  const s = settings.data;
+
   return (
-    <form onSubmit={save} key={settings.data.invoice_show_shop_price}>
-      <div className="form-grid">
-        <label className="check-field">
-          <input
-            type="checkbox"
-            name="showShopPrice"
-            defaultChecked={settings.data.invoice_show_shop_price === "true"}
-          />
-          <span>Show Shop Selling Price on printed invoices</span>
-        </label>
-        <label className="span-2">
-          Default invoice terms
-          <textarea
-            name="defaultTerms"
-            defaultValue={settings.data.invoice_default_terms}
-          />
-        </label>
+    <form onSubmit={save} key={s.invoice_show_shop_price || "settings"}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        {/* Section 1: A4 Professional Invoice Options */}
+        <div style={{ background: "#f8fafc", padding: 16, borderRadius: 8, border: "1px solid #e2e8f0" }}>
+          <h4 style={{ margin: "0 0 12px", color: "#16a34a", fontSize: 14, fontWeight: 700 }}>
+            A4 Professional Invoice Layout
+          </h4>
+          <div className="form-grid">
+            <label className="check-field">
+              <input
+                type="checkbox"
+                name="showShopPrice"
+                defaultChecked={s.invoice_show_shop_price === "true"}
+              />
+              <span>Show Shop Selling Price column</span>
+            </label>
+            <label className="check-field">
+              <input
+                type="checkbox"
+                name="showCustomerWhatsapp"
+                defaultChecked={s.invoice_show_customer_whatsapp !== "false"}
+              />
+              <span>Display Customer WhatsApp number</span>
+            </label>
+            <label>
+              Primary Accent Color
+              <select name="accentColor" defaultValue={s.invoice_accent_color || "#16a34a"}>
+                <option value="#16a34a">Ceylon Tea Emerald (#16a34a)</option>
+                <option value="#15803d">Deep Forest Green (#15803d)</option>
+                <option value="#65a30d">Lime Tea Green (#65a30d)</option>
+                <option value="#0284c7">Sapphire Blue (#0284c7)</option>
+              </select>
+            </label>
+            <label className="span-2">
+              Default Invoice Terms & Conditions
+              <textarea
+                name="defaultTerms"
+                rows={2}
+                defaultValue={s.invoice_default_terms}
+              />
+            </label>
+          </div>
+        </div>
+
+        {/* Section 2: Bluetooth & POS Thermal Receipt Options */}
+        <div style={{ background: "#f8fafc", padding: 16, borderRadius: 8, border: "1px solid #e2e8f0" }}>
+          <h4 style={{ margin: "0 0 12px", color: "#16a34a", fontSize: 14, fontWeight: 700 }}>
+            Bluetooth & Thermal Receipt Settings (කුඩා බිල්පත)
+          </h4>
+          <div className="form-grid">
+            <label>
+              Printer Profile Name
+              <input
+                type="text"
+                name="thermalPrinterName"
+                defaultValue={s.thermal_printer_name || "Bluetooth Thermal POS"}
+              />
+            </label>
+            <label>
+              Paper Width Preset
+              <select
+                name="thermalPaperWidth"
+                value={paperWidth}
+                onChange={(e) => setPaperWidth(e.target.value)}
+              >
+                <option value="58mm">58mm (Portable / Handheld Bluetooth)</option>
+                <option value="80mm">80mm (Desktop POS Receipt)</option>
+                <option value="custom">Custom Width</option>
+              </select>
+            </label>
+
+            {paperWidth === "custom" && (
+              <label>
+                Custom Width (mm)
+                <input
+                  type="number"
+                  name="thermalCustomWidthMm"
+                  min="40"
+                  max="120"
+                  defaultValue={Number(s.thermal_custom_width_mm || 58)}
+                />
+              </label>
+            )}
+
+            <label>
+              Font Size
+              <select name="thermalFontSize" defaultValue={s.thermal_font_size || "normal"}>
+                <option value="small">Small (Compact)</option>
+                <option value="normal">Normal</option>
+                <option value="large">Large</option>
+              </select>
+            </label>
+
+            <label>
+              Text Density
+              <select name="thermalTextDensity" defaultValue={s.thermal_text_density || "normal"}>
+                <option value="normal">Normal</option>
+                <option value="high">High Contrast (Bold / Double-Strike)</option>
+              </select>
+            </label>
+
+            <label>
+              Default Print Mode
+              <select name="thermalDefaultMode" defaultValue={s.thermal_default_mode || "browser"}>
+                <option value="browser">Browser Print Fallback (Universal)</option>
+                <option value="bluetooth">Web Bluetooth API (Direct)</option>
+              </select>
+            </label>
+
+            <label>
+              Number of Copies
+              <select name="thermalCopies" defaultValue={s.thermal_copies || "1"}>
+                <option value="1">1 Copy</option>
+                <option value="2">2 Copies (Customer + Office)</option>
+              </select>
+            </label>
+
+            <div className="span-2" style={{ display: "flex", gap: 18, flexWrap: "wrap", margin: "6px 0" }}>
+              <label className="check-field">
+                <input
+                  type="checkbox"
+                  name="thermalShowLogo"
+                  defaultChecked={s.thermal_show_logo !== "false"}
+                />
+                <span>Print Leaf Logo on receipt</span>
+              </label>
+              <label className="check-field">
+                <input
+                  type="checkbox"
+                  name="thermalShowQr"
+                  defaultChecked={s.thermal_show_qr !== "false"}
+                />
+                <span>Print Verification Link on receipt</span>
+              </label>
+              <label className="check-field">
+                <input
+                  type="checkbox"
+                  name="thermalAutoCut"
+                  defaultChecked={s.thermal_auto_cut === "true"}
+                />
+                <span>Auto Paper Cut (ESC/POS)</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 3: WhatsApp Invoice Message Template */}
+        <div style={{ background: "#f8fafc", padding: 16, borderRadius: 8, border: "1px solid #e2e8f0" }}>
+          <h4 style={{ margin: "0 0 12px", color: "#16a34a", fontSize: 14, fontWeight: 700 }}>
+            WhatsApp Invoice Message Template
+          </h4>
+          <label className="span-2">
+            <span style={{ fontSize: 12, color: "#64748b" }}>
+              Available placeholders: <code>{"{invoice_number}"}</code>, <code>{"{shop_name}"}</code>, <code>{"{total}"}</code>, <code>{"{paid}"}</code>, <code>{"{balance}"}</code>, <code>{"{invoice_link}"}</code>
+            </span>
+            <textarea
+              name="whatsappTemplate"
+              rows={4}
+              defaultValue={
+                s.whatsapp_invoice_template ||
+                "Hello,\n\nYour invoice from Nugathalawa Ceylon Tea Export (Pvt) Ltd is ready.\n\nInvoice No: {invoice_number}\nShop: {shop_name}\nTotal: LKR {total}\nPaid: LKR {paid}\nBalance: LKR {balance}\n\nView / Download Invoice:\n{invoice_link}\n\nThank you!"
+              }
+              style={{ marginTop: 6 }}
+            />
+          </label>
+        </div>
       </div>
-      {message && <p className="muted">{message}</p>}
-      <div className="form-actions">
-        <button className="primary" disabled={busy}>
-          Save billing settings
+
+      {message && (
+        <p
+          style={{
+            marginTop: 12,
+            padding: "8px 14px",
+            borderRadius: 6,
+            background: message.includes("success") ? "#f0fdf4" : "#fef2f2",
+            color: message.includes("success") ? "#166534" : "#b91c1c",
+            fontSize: 13,
+          }}
+        >
+          {message}
+        </p>
+      )}
+
+      <div className="form-actions" style={{ marginTop: 16 }}>
+        <button className="primary" disabled={busy} style={{ background: "#16a34a" }}>
+          Save Invoice & Printing Settings
         </button>
       </div>
     </form>
@@ -374,6 +588,7 @@ export function BillingPanel({
   function payload(includePayment = true) {
     return {
       customerId,
+      customerWhatsapp: customerWhatsapp ? normalizeWhatsApp(customerWhatsapp) : undefined,
       warehouseId,
       invoiceDate,
       items: lines
@@ -552,6 +767,9 @@ export function BillingPanel({
     const p = JSON.parse(d.payload_json);
     setDraftId(d.id);
     setCustomer(p.customerId);
+    if (p.customerWhatsapp || d.customer_whatsapp) {
+      setCustomerWhatsapp(p.customerWhatsapp || d.customer_whatsapp || "");
+    }
     setWarehouse(p.warehouseId);
     setInvoiceDate(p.invoiceDate);
     setLines(
@@ -579,6 +797,58 @@ export function BillingPanel({
         : 0,
     );
   }
+
+  const selectedCust = customers.find((x) => x.id === customerId);
+  const draftInvoiceData: InvoiceViewData = {
+    number: draftId ? `DRAFT-${draftId.slice(0, 6)}` : `INV-PREVIEW`,
+    invoiceDate: invoiceDate || today(),
+    dueAt: dueAt || null,
+    shopName: selectedCust?.shop_name || "Valued Customer",
+    customerPhone: selectedCust?.phone,
+    customerWhatsapp: customerWhatsapp || selectedCust?.whatsapp,
+    customerAddress: selectedCust?.address,
+    businessName: "Nugathalawa Ceylon Tea Export (Pvt) Ltd",
+    businessAddress: "Na Sewana, Hamangalla, Narangoda, Sri Lanka",
+    businessPhone: "076 661 5492",
+    businessWhatsapp: "076 696 5493",
+    paymentMethod,
+    paymentTerms,
+    notes,
+    terms: terms || settings.data?.invoice_default_terms,
+    subtotalCents: totals.subtotal,
+    itemDiscountCents: totals.itemDiscount,
+    invoiceDiscountCents: totals.invoiceDiscount,
+    totalCents: totals.total,
+    paidCents: cents(amountPaid),
+    items: lines
+      .filter((l) => l.variantId)
+      .map((l) => {
+        const p = products.find((x) => x.variant_id === l.variantId);
+        const unit =
+          l.priceType === "retail"
+            ? p?.retail_cents || 0
+            : l.priceType === "shop"
+              ? p?.shop_price_cents || 0
+              : p?.wholesale_cents || 0;
+        const gross = unit * l.quantity;
+        const itemDisc =
+          l.discountType === "percent"
+            ? percent(gross, l.discountValue)
+            : Math.min(gross, cents(l.discountValue));
+        return {
+          name: p?.name || "Product",
+          variantLabel: p?.label,
+          sku: p?.sku,
+          quantity: l.quantity,
+          unitPriceCents: unit,
+          shopPriceCents: p?.shop_price_cents,
+          itemDiscountCents: itemDisc,
+          lineCents: gross - itemDisc,
+          priceType: l.priceType,
+        };
+      }),
+  };
+
   return (
     <>
       <div className="panel">
@@ -597,7 +867,14 @@ export function BillingPanel({
             Customer / Shop
             <select
               value={customerId}
-              onChange={(e) => setCustomer(e.target.value)}
+              onChange={(e) => {
+                const id = e.target.value;
+                setCustomer(id);
+                const c = customers.find((x) => x.id === id);
+                if (c) {
+                  setCustomerWhatsapp(c.whatsapp || c.phone || "");
+                }
+              }}
               required
             >
               <option value="">Select a shop</option>
@@ -607,6 +884,15 @@ export function BillingPanel({
                 </option>
               ))}
             </select>
+          </label>
+          <label>
+            Customer WhatsApp Number
+            <input
+              type="tel"
+              value={customerWhatsapp}
+              onChange={(e) => setCustomerWhatsapp(e.target.value)}
+              placeholder="077 123 4567 or +94771234567"
+            />
           </label>
           <label>
             Stock location
@@ -731,30 +1017,60 @@ export function BillingPanel({
             </strong>
           </div>
         </div>
-        <div className="form-actions">
+        <div className="form-actions" style={{ flexWrap: "wrap", gap: "8px" }}>
           <button
+            type="button"
+            className="secondary"
+            disabled={!customerId || !lines.some((x) => x.variantId)}
+            onClick={() => setShowLivePreview(true)}
+            style={{ color: "#16a34a", borderColor: "#86efac", fontWeight: 600 }}
+          >
+            <Eye size={16} />
+            Preview Invoice / බිල්පත පෙරදසුන
+          </button>
+          <button
+            type="button"
             className="secondary"
             disabled={busy || !customerId}
             onClick={saveDraft}
           >
             <FileDown size={16} />
-            Save draft
+            Save Draft
           </button>
           <button
+            type="button"
             className="primary"
             disabled={busy || !customerId || !lines.some((x) => x.variantId)}
             onClick={post}
           >
-            Finalize invoice
+            <Check size={16} />
+            Finalize Invoice
+          </button>
+          <button
+            type="button"
+            className="primary"
+            disabled={busy || !customerId || !lines.some((x) => x.variantId)}
+            onClick={postAndSendWhatsApp}
+            style={{ background: "#16a34a", color: "#fff" }}
+          >
+            <MessageCircle size={16} />
+            Save & Send WhatsApp
           </button>
           {draftId && (
             <button className="secondary" onClick={() => setDraftId(null)}>
               <RotateCcw size={16} />
-              New invoice
+              New Invoice
             </button>
           )}
         </div>
       </div>
+
+      {showLivePreview && (
+        <InvoicePreviewModal
+          data={draftInvoiceData}
+          onClose={() => setShowLivePreview(false)}
+        />
+      )}
       {!!drafts.data?.length && (
         <div className="panel" style={{ marginTop: 20 }}>
           <div className="panel-head">

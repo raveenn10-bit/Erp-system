@@ -897,6 +897,7 @@ function InvoiceTable({
             <th>Outstanding</th>
             <th>Due</th>
             <th>Status</th>
+            <th>Action</th>
           </tr>
         </thead>
         <tbody>
@@ -922,6 +923,24 @@ function InvoiceTable({
                 <span className={`badge ${i.due_at ? "due" : ""}`}>
                   {i.status}
                 </span>
+              </td>
+              <td>
+                {onSelect && (
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => onSelect(i.id)}
+                    style={{
+                      fontSize: 11,
+                      padding: "4px 8px",
+                      color: "#16a34a",
+                      borderColor: "#86efac",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Preview / Print
+                  </button>
+                )}
               </td>
             </tr>
           ))}

@@ -859,7 +859,7 @@ app.get("/api/invoices/:id", async (c) => {
     db = c.env.DB;
   const invoice = await db
     .prepare(
-      `SELECT i.*,c.shop_name,c.address,c.whatsapp,b.name AS business_name,b.address AS business_address,b.phone AS business_phone,b.whatsapp AS business_whatsapp,b.email AS business_email FROM invoices i JOIN customers c ON c.id=i.customer_id CROSS JOIN business_settings b WHERE i.id=? AND (?=1 OR i.rep_id=?)`,
+      `SELECT i.*,c.shop_name,c.owner_name,c.address,c.phone AS customer_phone,c.whatsapp AS customer_profile_whatsapp,u.name AS rep_name,b.name AS business_name,b.address AS business_address,b.phone AS business_phone,b.whatsapp AS business_whatsapp,b.email AS business_email FROM invoices i JOIN customers c ON c.id=i.customer_id LEFT JOIN users u ON u.id=i.rep_id CROSS JOIN business_settings b WHERE i.id=? AND (?=1 OR i.rep_id=?)`,
     )
     .bind(id, p.admin, p.id)
     .first();
@@ -867,7 +867,7 @@ app.get("/api/invoices/:id", async (c) => {
   const items = (
     await db
       .prepare(
-        "SELECT ii.*,p.name,v.label FROM invoice_items ii JOIN product_variants v ON v.id=ii.variant_id JOIN products p ON p.id=v.product_id WHERE invoice_id=?",
+        "SELECT ii.*,p.name,p.sku,v.label,v.unit FROM invoice_items ii JOIN product_variants v ON v.id=ii.variant_id JOIN products p ON p.id=v.product_id WHERE invoice_id=?",
       )
       .bind(id)
       .all()

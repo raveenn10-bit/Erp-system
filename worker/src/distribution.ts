@@ -325,16 +325,41 @@ routes.post("/billing/invoices", async (c) => {
   }
 });
 
+const DEFAULT_BILLING_SETTINGS: Record<string, string> = {
+  invoice_show_shop_price: "false",
+  invoice_show_customer_whatsapp: "true",
+  invoice_default_terms:
+    "Goods received in good condition. All cheques subject to realization. 30 days credit.",
+  invoice_accent_color: "#16a34a",
+  invoice_template: "emerald_classic",
+  invoice_signature_left: "Issued By / Authorized Signature",
+  invoice_signature_right: "Received By / Customer Signature",
+  thermal_printer_name: "Bluetooth Thermal POS",
+  thermal_paper_width: "58mm",
+  thermal_custom_width_mm: "58",
+  thermal_font_size: "normal",
+  thermal_text_density: "normal",
+  thermal_show_logo: "true",
+  thermal_show_qr: "true",
+  thermal_auto_cut: "false",
+  thermal_copies: "1",
+  thermal_default_mode: "browser",
+  whatsapp_invoice_template:
+    "Hello,\n\nYour invoice from Nugathalawa Ceylon Tea Export (Pvt) Ltd is ready.\n\nInvoice No: {invoice_number}\nShop: {shop_name}\nTotal: LKR {total}\nPaid: LKR {paid}\nBalance: LKR {balance}\n\nView / Download Invoice:\n{invoice_link}\n\nThank you!",
+};
+
 routes.get("/billing/settings", async (c) => {
   const denied = await guard(c, "settings.view");
   if (denied) return denied;
   const rows = (
     await c.env.DB.prepare(
-      "SELECT key,value FROM system_settings WHERE key IN('invoice_show_shop_price','invoice_default_terms','invoice_show_customer_whatsapp')",
+      "SELECT key,value FROM system_settings WHERE key LIKE 'invoice_%' OR key LIKE 'thermal_%' OR key LIKE 'whatsapp_%'",
     ).all<{ key: string; value: string }>()
   ).results;
-  return c.json(Object.fromEntries(rows.map((x) => [x.key, x.value])));
+  const stored = Object.fromEntries(rows.map((x) => [x.key, x.value]));
+  return c.json({ ...DEFAULT_BILLING_SETTINGS, ...stored });
 });
+
 routes.patch("/billing/settings", async (c) => {
   const denied = await guard(c, "settings.edit");
   if (denied) return denied;
@@ -344,35 +369,129 @@ routes.patch("/billing/settings", async (c) => {
       showShopPrice: z.boolean().optional(),
       showCustomerWhatsapp: z.boolean().optional(),
       defaultTerms: z.string().max(1500).optional(),
+      accentColor: z.string().max(25).optional(),
+      template: z.string().max(50).optional(),
+      signatureLeft: z.string().max(100).optional(),
+      signatureRight: z.string().max(100).optional(),
+      thermalPrinterName: z.string().max(100).optional(),
+      thermalPaperWidth: z.enum(["58mm", "80mm", "custom"]).optional(),
+      thermalCustomWidthMm: z.number().min(30).max(200).optional(),
+      thermalFontSize: z.enum(["small", "normal", "large"]).optional(),
+      thermalTextDensity: z.enum(["normal", "high"]).optional(),
+      thermalShowLogo: z.boolean().optional(),
+      thermalShowQr: z.boolean().optional(),
+      thermalAutoCut: z.boolean().optional(),
+      thermalCopies: z.number().min(1).max(5).optional(),
+      thermalDefaultMode: z.enum(["browser", "bluetooth"]).optional(),
+      whatsappTemplate: z.string().max(2000).optional(),
     }),
   );
   const stmts: any[] = [];
-  if (d.showShopPrice !== undefined) {
-    stmts.push(
-      c.env.DB.prepare(
-        "INSERT INTO system_settings(key,value) VALUES('invoice_show_shop_price',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-      ).bind(String(d.showShopPrice)),
-    );
+  const map: Record<string, string | undefined> = {
+    invoice_show_shop_price:
+      d.showShopPrice !== undefined ? String(d.showShopPrice) : undefined,
+    invoice_show_customer_whatsapp:
+      d.showCustomerWhatsapp !== undefined
+        ? String(d.showCustomerWhatsapp)
+        : undefined,
+    invoice_default_terms: d.defaultTerms,
+    invoice_accent_color: d.accentColor,
+    invoice_template: d.template,
+    invoice_signature_left: d.signatureLeft,
+    invoice_signature_right: d.signatureRight,
+    thermal_printer_name: d.thermalPrinterName,
+    thermal_paper_width: d.thermalPaperWidth,
+    thermal_custom_width_mm:
+      d.thermalCustomWidthMm !== undefined
+        ? String(d.thermalCustomWidthMm)
+        : undefined,
+    thermal_font_size: d.thermalFontSize,
+    thermal_text_density: d.thermalTextDensity,
+    thermal_show_logo:
+      d.thermalShowLogo !== undefined ? String(d.thermalShowLogo) : undefined,
+    thermal_show_qr:
+      d.thermalShowQr !== undefined ? String(d.thermalShowQr) : undefined,
+    thermal_auto_cut:
+      d.thermalAutoCut !== undefined ? String(d.thermalAutoCut) : undefined,
+    thermal_copies:
+      d.thermalCopies !== undefined ? String(d.thermalCopies) : undefined,
+    thermal_default_mode: d.thermalDefaultMode,
+    whatsapp_invoice_template: d.whatsappTemplate,
+  };
+
+  for (const [key, val] of Object.entries(map)) {
+    if (val !== undefined) {
+      stmts.push(
+        c.env.DB.prepare(
+          "INSERT INTO system_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        ).bind(key, val),
+      );
+    }
   }
-  if (d.showCustomerWhatsapp !== undefined) {
-    stmts.push(
-      c.env.DB.prepare(
-        "INSERT INTO system_settings(key,value) VALUES('invoice_show_customer_whatsapp',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-      ).bind(String(d.showCustomerWhatsapp)),
-    );
-  }
-  if (d.defaultTerms !== undefined) {
-    stmts.push(
-      c.env.DB.prepare(
-        "INSERT INTO system_settings(key,value) VALUES('invoice_default_terms',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-      ).bind(d.defaultTerms),
-    );
-  }
+
   if (stmts.length) {
     await c.env.DB.batch(stmts);
     await audit(c.env.DB, current(c).id, "billing.settings_updated", null);
   }
   return c.json({ ok: true });
+});
+
+routes.post("/invoices/:id/send-whatsapp", async (c) => {
+  const denied = await guard(c, "invoices.view");
+  if (denied) return denied;
+  const id = c.req.param("id");
+  const db = c.env.DB;
+  const user = current(c);
+  const body = await json(
+    c,
+    z.object({
+      recipientPhone: z.string().min(5),
+      message: z.string().min(1),
+    }),
+  );
+
+  const invoice = await db
+    .prepare(
+      "SELECT id, customer_id, customer_whatsapp, number FROM invoices WHERE id=?",
+    )
+    .bind(id)
+    .first<{
+      id: string;
+      customer_id: string;
+      customer_whatsapp: string;
+      number: string;
+    }>();
+
+  if (!invoice) return c.json({ error: "Invoice not found" }, 404);
+
+  const cleanPhone = normalizeWhatsApp(body.recipientPhone);
+  if (!cleanPhone) return c.json({ error: "Invalid phone number" }, 400);
+
+  if (cleanPhone !== invoice.customer_whatsapp) {
+    await db
+      .prepare("UPDATE invoices SET customer_whatsapp=? WHERE id=?")
+      .bind(cleanPhone, id)
+      .run();
+  }
+
+  const logId = crypto.randomUUID();
+  await db
+    .prepare(
+      `INSERT INTO notification_delivery_logs (id, notification_id, invoice_id, customer_id, recipient_phone, message, channel, status, sent_by, created_at)
+       VALUES (?, NULL, ?, ?, ?, ?, 'whatsapp', 'sent', ?, ?)`,
+    )
+    .bind(
+      logId,
+      id,
+      invoice.customer_id,
+      cleanPhone,
+      body.message,
+      user.id,
+      new Date().toISOString(),
+    )
+    .run();
+
+  return c.json({ ok: true, logId, cleanPhone });
 });
 
 routes.patch("/invoices/:id/whatsapp", async (c) => {
