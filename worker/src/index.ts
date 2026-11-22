@@ -276,6 +276,7 @@ app.post("/api/change-password", async (c) => {
     ),
     c.env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(p.id),
   ]);
+  await audit(c.env.DB, p.id, "user.password_changed", p.id);
   c.header("Set-Cookie", clearCookie(new URL(c.req.url).protocol === "https:"));
   return c.json({ ok: true });
 });
@@ -415,6 +416,18 @@ app.post("/api/roles", async (c) => {
   ]);
   await audit(db, current(c).id, "role.created", id);
   return c.json({ id }, 201);
+});
+app.get("/api/audit-logs", async (c) => {
+  if (!current(c).admin) return c.json({ error: "Forbidden" }, 403);
+  const limit = Math.min(200, Number(c.req.query("limit")) || 100);
+  const rows = await c.env.DB.prepare(
+    `SELECT a.id, a.action, a.entity_id, a.details, a.created_at, u.name AS actor_name, u.email AS actor_email
+     FROM audit_logs a
+     LEFT JOIN users u ON u.id = a.actor_id
+     ORDER BY a.created_at DESC
+     LIMIT ?`
+  ).bind(limit).all();
+  return c.json(rows.results || []);
 });
 app.patch("/api/users/:id/permissions", async (c) => {
   if (!current(c).admin) return c.json({ error: "Forbidden" }, 403);

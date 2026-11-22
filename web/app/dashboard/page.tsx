@@ -57,6 +57,7 @@ import {
   CreditNotesPanel,
   ChangePasswordPanel,
   StockTransferPanel,
+  AuditLogsPanel,
 } from "@/components/erp-panels";
 import {
   BillingPanel,
@@ -171,6 +172,7 @@ const menuGroups = [
     items: [
       { name: "Document Center", labelEn: "Document Center", labelSi: "ලේඛන මධ්‍යස්ථානය", icon: FileText },
       { name: "Team", labelEn: "Team", labelSi: "කාර්ය මණ්ඩලය", icon: Users },
+      { name: "Audit Logs", labelEn: "Audit Logs", labelSi: "ආරක්ෂක සටහන්", icon: Shield },
       { name: "Settings", labelEn: "Settings", labelSi: "සැකසුම්", icon: Settings },
     ],
   },
@@ -356,7 +358,7 @@ function Workspace() {
                   .filter(
                     (item) =>
                       user.admin ||
-                      !["Team", "Settings", "Reports", "Expenses", "Document Center"].includes(item.name)
+                      !["Team", "Settings", "Reports", "Expenses", "Document Center", "Audit Logs"].includes(item.name)
                   )
                   .map(({ name, labelEn, labelSi, icon: Icon }) => (
                     <button
@@ -521,6 +523,108 @@ function Workspace() {
                 <div className="loader" />
               ) : (
                 <>
+                  {!user.admin && (
+                    <div
+                      className="rep-quick-bar"
+                      style={{
+                        display: "flex",
+                        gap: 12,
+                        flexWrap: "wrap",
+                        padding: "14px 18px",
+                        background:
+                          "linear-gradient(135deg, rgba(16, 165, 141, 0.08) 0%, rgba(34, 197, 94, 0.08) 100%)",
+                        borderRadius: 12,
+                        border: "1px solid rgba(16, 165, 141, 0.2)",
+                        marginBottom: 16,
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ fontSize: 20 }}>🚚</span>
+                        <div>
+                          <strong style={{ display: "block", fontSize: 14 }}>
+                            නියෝජිත වැඩබිම (Sales Rep Workspace)
+                          </strong>
+                          <span style={{ fontSize: 12, color: "#64748b" }}>
+                            ක්ෂණික විකිණුම්, ගෙවීම් ලබාගැනීම් සහ තොග කළමනාකරණය
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          className="primary"
+                          style={{
+                            padding: "8px 14px",
+                            fontSize: 13,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                          }}
+                          onClick={() => changeTab("POS")}
+                        >
+                          <ShoppingCart size={15} /> නව විකිණුම (Smart POS)
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          style={{
+                            padding: "8px 14px",
+                            fontSize: 13,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                          }}
+                          onClick={() => changeTab("Billing")}
+                        >
+                          <CreditCard size={15} /> ගෙවීම් සටහන් (Record Payment)
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          style={{
+                            padding: "8px 14px",
+                            fontSize: 13,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                          }}
+                          onClick={() => changeTab("Customers")}
+                        >
+                          <Users size={15} /> ගනුදෙනුකරුවන් (My Customers)
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          style={{
+                            padding: "8px 14px",
+                            fontSize: 13,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                          }}
+                          onClick={() => changeTab("Free Issues")}
+                        >
+                          <Gift size={15} /> නොමිලේ සාම්පල (Free Issues)
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          style={{
+                            padding: "8px 14px",
+                            fontSize: 13,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                          }}
+                          onClick={() => changeTab("Stock")}
+                        >
+                          <Box size={15} /> වෑන් රථයේ තොග (Van Stock)
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   <div className="stats-grid">
                     {[
                       {
@@ -982,6 +1086,7 @@ function Workspace() {
               </div>
             </>
           )}
+          {tab === "Audit Logs" && user.admin && <AuditLogsPanel />}
         </motion.div>
       </main>
     </div>

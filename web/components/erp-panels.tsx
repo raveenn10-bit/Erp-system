@@ -805,6 +805,120 @@ export function ChangePasswordPanel() {
 // ═══════════════════════════════════════════════════════════════
 // STOCK TRANSFER PANEL
 // ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// AUDIT LOGS PANEL
+// ═══════════════════════════════════════════════════════════════
+export function AuditLogsPanel() {
+  const [search, setSearch] = useState("");
+  const query = useQuery<Array<{
+    id: string;
+    action: string;
+    entity_id: string;
+    details: string;
+    created_at: string;
+    actor_name: string;
+    actor_email: string;
+  }>>({
+    queryKey: ["audit-logs"],
+    queryFn: () => api("/audit-logs?limit=150"),
+  });
+
+  const filtered = (query.data || []).filter(
+    (a) =>
+      a.action.toLowerCase().includes(search.toLowerCase()) ||
+      (a.actor_name && a.actor_name.toLowerCase().includes(search.toLowerCase())) ||
+      (a.entity_id && a.entity_id.toLowerCase().includes(search.toLowerCase())) ||
+      (a.details && a.details.toLowerCase().includes(search.toLowerCase()))
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="section-lead">
+        <div>
+          <h2>පද්ධති ක්‍රියාකාරකම් හා ආරක්ෂක සටහන් (Audit Trail)</h2>
+          <p>Admin security logs, user logins, role changes, and critical business events.</p>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <input
+          type="search"
+          placeholder="ක්‍රියාව, පරිශීලකයා හෝ විස්තරය සොයන්න (Search audit log)..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ maxWidth: 360, margin: 0 }}
+        />
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => query.refetch()}
+          style={{ padding: "6px 12px", fontSize: 12 }}
+        >
+          යාවත්කාලීන කරන්න (Refresh)
+        </button>
+      </div>
+
+      <div className="panel" style={{ padding: 0, overflow: "hidden" }}>
+        <div style={{ overflowX: "auto" }}>
+          <table className="table" style={{ width: "100%", margin: 0, fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: "rgba(16, 165, 141, 0.08)", textAlign: "left" }}>
+                <th style={{ padding: "10px 14px" }}>දිනය සහ වේලාව</th>
+                <th style={{ padding: "10px 14px" }}>පරිශීලකයා (Actor)</th>
+                <th style={{ padding: "10px 14px" }}>ක්‍රියාව (Action)</th>
+                <th style={{ padding: "10px 14px" }}>අදාළ අංකය / Entity</th>
+                <th style={{ padding: "10px 14px" }}>විස්තරය (Details)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {query.isLoading ? (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: "center", padding: 32 }}>
+                    <div className="loader" />
+                  </td>
+                </tr>
+              ) : filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: "center", padding: 32, color: "#888" }}>
+                    කිසිදු සටහනක් හමු නොවීය.
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((log) => (
+                  <tr key={log.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                    <td style={{ padding: "10px 14px", fontSize: 12, color: "#64748b" }}>
+                      {log.created_at ? new Date(log.created_at).toLocaleString("en-GB") : "-"}
+                    </td>
+                    <td style={{ padding: "10px 14px", fontWeight: 600 }}>
+                      {log.actor_name || "System"}
+                      {log.actor_email && (
+                        <span style={{ display: "block", fontSize: 11, color: "#94a3b8" }}>
+                          {log.actor_email}
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: "10px 14px" }}>
+                      <span className="badge" style={{ background: "#f1f5f9", color: "#334155" }}>
+                        {log.action}
+                      </span>
+                    </td>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12 }}>
+                      {log.entity_id || "-"}
+                    </td>
+                    <td style={{ padding: "10px 14px", color: "#475569" }}>
+                      {log.details || "-"}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function StockTransferPanel({
   products,
   stocks,
