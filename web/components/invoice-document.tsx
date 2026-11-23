@@ -122,10 +122,12 @@ export function InvoiceA4({ m }: { m: InvoiceModel }) {
 }
 
 /** Black-and-white receipt rendered at the printer's dot width (58mm=384, 80mm=576). */
-export function InvoiceReceipt({ m, dots }: { m: InvoiceModel; dots: number }) {
-  const fs = dots >= 520 ? 24 : 21;
+export function InvoiceReceipt({ m, spec }: { m: InvoiceModel; spec: { dots: number; fontPx: number; marginDots: number; showLogo: boolean } }) {
+  const { dots } = spec;
+  const fs = spec.fontPx;
   return (
-    <div className="rcpt" style={{ width: dots, fontSize: fs }}>
+    <div className="rcpt" style={{ width: dots, fontSize: fs, paddingLeft: spec.marginDots, paddingRight: spec.marginDots }}>
+      {spec.showLogo && <div className="rcpt-c"><img src="/nugathalawa-logo.jpg" alt="" style={{ width: Math.round(dots * 0.32), height: Math.round(dots * 0.32), borderRadius: '50%', filter: 'grayscale(1) contrast(1.4)' }} /></div>}
       <div className="rcpt-c rcpt-b" style={{ fontSize: fs * 1.15 }}>{m.business.name}</div>
       {m.business.address && <div className="rcpt-c">{m.business.address}</div>}
       {m.business.phone && <div className="rcpt-c">Tel {m.business.phone}</div>}

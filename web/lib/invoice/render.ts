@@ -48,20 +48,22 @@ export async function buildA4Pdf(m: InvoiceModel): Promise<Blob> {
 }
 
 /** Thermal receipt rendered to a 1-bit friendly canvas at printer dot width. */
-export async function renderReceiptCanvas(m: InvoiceModel, dots: number): Promise<HTMLCanvasElement> {
-  return renderOffscreen(createElement(InvoiceReceipt, { m, dots }), dots, async host => snap(host.firstElementChild as HTMLElement, 1));
+export type ReceiptSpec = { dots: number; mm: number; fontPx: number; marginDots: number; showLogo: boolean };
+export async function renderReceiptCanvas(m: InvoiceModel, spec: ReceiptSpec): Promise<HTMLCanvasElement> {
+  return renderOffscreen(createElement(InvoiceReceipt, { m, spec }), spec.dots, async host => snap(host.firstElementChild as HTMLElement, 1));
 }
 
 /** Receipt as a black-and-white PNG (for printer apps such as RawBT that print images). */
-export async function buildReceiptPng(m: InvoiceModel, dots: number): Promise<Blob> {
-  const canvas = await renderReceiptCanvas(m, dots);
+export async function buildReceiptPng(m: InvoiceModel, spec: ReceiptSpec): Promise<Blob> {
+  const canvas = await renderReceiptCanvas(m, spec);
   return new Promise((res, rej) => canvas.toBlob(b => (b ? res(b) : rej(new Error('Could not create receipt image'))), 'image/png'));
 }
 
 /** Receipt as PDF (for OS printing / sharing), width = paper width in mm. */
-export async function buildReceiptPdf(m: InvoiceModel, dots: number, paperMm: number): Promise<Blob> {
+export async function buildReceiptPdf(m: InvoiceModel, spec: ReceiptSpec): Promise<Blob> {
+  const paperMm = spec.mm;
   const { jsPDF } = await import('jspdf');
-  const canvas = await renderReceiptCanvas(m, dots);
+  const canvas = await renderReceiptCanvas(m, spec);
   const h = (canvas.height / canvas.width) * paperMm;
   const pdf = new jsPDF({ unit: 'mm', format: [paperMm, Math.max(h, 40)], orientation: 'portrait' });
   pdf.addImage(canvas.toDataURL('image/jpeg', 0.85), 'JPEG', 0, 0, paperMm, h);
