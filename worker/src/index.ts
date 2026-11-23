@@ -277,11 +277,20 @@ app.get("/view/invoice/:token", async (c) => {
       .bind(invoice.id)
       .all()
   ).results;
+  // The global CSP (default-src 'none') blocks this page's inline styles, so
+  // customers saw unstyled HTML. This page only: allow its own inline styles,
+  // same-origin images and one nonce'd script for the print button.
+  const nonce = crypto.randomUUID().replace(/-/g, "");
+  c.header(
+    "Content-Security-Policy",
+    `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; script-src 'nonce-${nonce}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+  );
   const html = renderPublicInvoiceHtml({
     invoice,
     items,
     showShopPrice: (invoice as any).show_shop_price === "true",
     showCustomerWhatsapp: (invoice as any).show_customer_whatsapp !== "false",
+    nonce,
   });
   return c.html(html);
 });

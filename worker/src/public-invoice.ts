@@ -24,8 +24,11 @@ export function renderPublicInvoiceHtml(data: {
   items: any[];
   showShopPrice: boolean;
   showCustomerWhatsapp: boolean;
+  /** Per-request CSP nonce for the print button script. */
+  nonce?: string;
 }): string {
   const { invoice: i, items, showShopPrice, showCustomerWhatsapp } = data;
+  const nonce = escapeHtml(data.nonce || "");
   const balanceCents = Math.max(0, i.total_cents - i.paid_cents);
   const totalDiscountCents = (i.item_discount_cents || 0) + (i.invoice_discount_cents || 0);
   const formattedCustomerPhone = formatWhatsApp(i.customer_whatsapp || i.whatsapp || "");
@@ -286,7 +289,7 @@ export function renderPublicInvoiceHtml(data: {
     <div class="action-title">Nugathalawa Ceylon Tea — Official Invoice</div>
     <div class="action-btns">
       ${businessWa ? `<a class="btn btn-secondary" href="https://wa.me/${businessWa}" target="_blank" rel="noopener">WhatsApp Us</a>` : ""}
-      <button class="btn btn-primary" onclick="window.print()">
+      <button class="btn btn-primary" id="print-btn" type="button">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
         Print / Save PDF
       </button>
@@ -385,6 +388,7 @@ export function renderPublicInvoiceHtml(data: {
       </div>
     </div>
   </div>
+  <script nonce="${nonce}">document.getElementById("print-btn").addEventListener("click",function(){window.print();});</script>
 </body>
 </html>`;
 }
