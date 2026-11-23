@@ -215,6 +215,7 @@ export function NotificationBellAndDrawer({
       {/* Slide-in Drawer */}
       {open && (
         <div
+          data-overlay
           style={{
             position: "fixed",
             inset: 0,
@@ -546,6 +547,7 @@ Nugathalawa Ceylon Tea Export (Pvt) Ltd`;
 
   return (
     <div
+      data-overlay
       style={{
         position: "fixed",
         inset: 0,
@@ -581,7 +583,7 @@ Nugathalawa Ceylon Tea Export (Pvt) Ltd`;
             <MessageCircle size={20} style={{ color: "var(--success)" }} />
             <strong style={{ fontSize: 15 }}>WhatsApp මතක් කිරීම (Payment Reminder)</strong>
           </div>
-          <button type="button" className="secondary" onClick={onClose} style={{ width: 30, height: 30, padding: 0 }}>
+          <button type="button" className="secondary" data-close aria-label="Close" onClick={onClose} style={{ width: 30, height: 30, padding: 0 }}>
             <X size={16} />
           </button>
         </div>

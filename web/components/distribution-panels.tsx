@@ -10,6 +10,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { api, formatWhatsApp, idempotency, money, normalizeWhatsApp } from "@/lib/api";
+import { isNative, printDocumentSheet, publicOrigin, savePdfDoc, toast } from "@/lib/native";
 
 export type Product = {
   variant_id: string;
@@ -51,6 +52,11 @@ const warehouses = (stocks: Stock[]) => [
   ...new Map(stocks.map((s) => [s.warehouse_id, s.warehouse])).entries(),
 ];
 
+/** After a sale/issue was saved offline (PENDING SYNC), clear the form like a normal post. */
+function resetLinesOffline(setLines: (f: (l: Line[]) => Line[]) => void) {
+  setLines((l) => l.slice(0, 1).map((x) => ({ ...x, variantId: "", quantity: 1 })));
+}
+
 export function BillingSettings() {
   const client = useQueryClient();
   const settings = useQuery({
@@ -74,7 +80,6 @@ export function BillingSettings() {
         }),
       });
       await client.invalidateQueries({ queryKey: ["billing-settings"] });
-      await client.invalidateQueries({ queryKey: ["print-settings"] });
       setMessage("Billing settings saved.");
     } catch (error) {
       setMessage((error as Error).message);
@@ -434,7 +439,7 @@ export function BillingPanel({
       });
       await client.invalidateQueries({ queryKey: ["invoice-drafts"] });
     } catch (e) {
-      setError((e as Error).message);
+      if ((e as Error)?.name === "OfflineQueuedError") { toast((e as Error).message); resetLinesOffline(setLines); } else { setError((e as Error).message); toast((e as Error).message); }
     } finally {
       setBusy(false);
     }
@@ -450,7 +455,7 @@ export function BillingPanel({
       await client.invalidateQueries();
       onPosted(result.id);
     } catch (e) {
-      setError((e as Error).message);
+      if ((e as Error)?.name === "OfflineQueuedError") { toast((e as Error).message); resetLinesOffline(setLines); } else { setError((e as Error).message); toast((e as Error).message); }
     } finally {
       setBusy(false);
     }
@@ -482,22 +487,26 @@ export function BillingPanel({
       const totalStr = money(result.totalCents);
       const paidStr = money(result.paidCents);
       const balanceStr = money(Math.max(0, result.totalCents - result.paidCents));
-      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      const origin = publicOrigin();
       const invoiceLink = result.shareToken
         ? `${origin}/view/invoice/${result.shareToken}`
         : `${origin}/dashboard`;
 
       const message = `Hello,\n\nYour invoice from Nugathalawa Ceylon Tea Export (Pvt) Ltd is ready.\n\nInvoice No: ${result.number}\nShop: ${shopName}\nTotal: ${totalStr}\nPaid: ${paidStr}\nBalance: ${balanceStr}\n\nView / Download Invoice:\n${invoiceLink}\n\nThank you!`;
 
-      window.open(
-        `https://wa.me/${normNumber}?text=${encodeURIComponent(message)}`,
-        "_blank",
-        "noopener,noreferrer"
-      );
+      // Android app: don't send the public link (that page renders unstyled on the
+      // production Worker). The invoice sheet opens next with "Send PDF on WhatsApp".
+      if (!isNative()) {
+        window.open(
+          `https://wa.me/${normNumber}?text=${encodeURIComponent(message)}`,
+          "_blank",
+          "noopener,noreferrer"
+        );
+      }
 
       onPosted(result.id);
     } catch (e) {
-      setError((e as Error).message);
+      if ((e as Error)?.name === "OfflineQueuedError") { toast((e as Error).message); resetLinesOffline(setLines); } else { setError((e as Error).message); toast((e as Error).message); }
     } finally {
       setBusy(false);
     }
@@ -552,7 +561,7 @@ export function BillingPanel({
     y += 5;
     pdf.setFont("helvetica", "bold");
     pdf.text(`Grand Total: ${(totals.total / 100).toFixed(2)}`, 195, y, { align: "right" });
-    pdf.save(`DRAFT-INVOICE-${invoiceDate}.pdf`);
+    await savePdfDoc(pdf, `DRAFT-INVOICE-${invoiceDate}.pdf`);
   }
 
   function loadDraft(d: any) {
@@ -747,6 +756,7 @@ export function BillingPanel({
             </strong>
           </div>
         </div>
+        {error && <div className="error" role="alert" aria-live="assertive">{error}</div>}
         <div className="form-actions">
           <button
             className="secondary"
@@ -880,7 +890,7 @@ export function FreeIssuePanel({
       await client.invalidateQueries({ queryKey: ["free-issues"] });
       setDocumentId(result.id);
     } catch (e) {
-      setError((e as Error).message);
+      if ((e as Error)?.name === "OfflineQueuedError") { toast((e as Error).message); resetLinesOffline(setLines); } else { setError((e as Error).message); toast((e as Error).message); }
     }
   }
   return (
@@ -976,7 +986,8 @@ export function FreeIssuePanel({
             setLines={setLines}
             products={products}
           />
-          <div className="form-actions">
+          {error && <div className="error" role="alert" aria-live="assertive">{error}</div>}
+        <div className="form-actions">
             <button className="primary">Confirm free issue</button>
           </div>
         </form>
@@ -1108,7 +1119,7 @@ export function ConsignmentPanel({
       await client.invalidateQueries({ queryKey: ["consignments"] });
       setSelected(r.id);
     } catch (e) {
-      setError((e as Error).message);
+      if ((e as Error)?.name === "OfflineQueuedError") { toast((e as Error).message); resetLinesOffline(setLines); } else { setError((e as Error).message); toast((e as Error).message); }
     }
   }
   async function settle(e: React.FormEvent<HTMLFormElement>) {
@@ -1138,7 +1149,7 @@ export function ConsignmentPanel({
       await client.invalidateQueries();
       onInvoice(r.invoiceId);
     } catch (e) {
-      setError((e as Error).message);
+      if ((e as Error)?.name === "OfflineQueuedError") { toast((e as Error).message); resetLinesOffline(setLines); } else { setError((e as Error).message); toast((e as Error).message); }
     }
     void item;
   }
@@ -1162,7 +1173,7 @@ export function ConsignmentPanel({
       });
       await client.invalidateQueries();
     } catch (e) {
-      setError((e as Error).message);
+      if ((e as Error)?.name === "OfflineQueuedError") { toast((e as Error).message); resetLinesOffline(setLines); } else { setError((e as Error).message); toast((e as Error).message); }
     }
   }
   return (
@@ -1252,7 +1263,8 @@ export function ConsignmentPanel({
             setLines={setLines}
             products={products}
           />
-          <div className="form-actions">
+          {error && <div className="error" role="alert" aria-live="assertive">{error}</div>}
+        <div className="form-actions">
             <button className="primary">Create delivery note</button>
           </div>
         </form>
@@ -1340,7 +1352,8 @@ export function ConsignmentPanel({
                   <option value="bank">Bank</option>
                 </select>
               </label>
-              <div className="form-actions">
+              {error && <div className="error" role="alert" aria-live="assertive">{error}</div>}
+        <div className="form-actions">
                 <button className="primary">Generate sales invoice</button>
               </div>
             </form>
@@ -1380,7 +1393,8 @@ export function ConsignmentPanel({
                 Received by
                 <input name="receivedBy" required />
               </label>
-              <div className="form-actions">
+              {error && <div className="error" role="alert" aria-live="assertive">{error}</div>}
+        <div className="form-actions">
                 <button className="primary">Record return</button>
               </div>
             </form>
@@ -1424,7 +1438,7 @@ async function pdfDocument(data: any, title: string, thermal = false) {
   y += 14;
   pdf.line(thermal ? 5 : 15, y, thermal ? 70 : 75, y);
   if (!thermal) pdf.line(130, y, 195, y);
-  pdf.save(`${data.record.reference_number}-${thermal ? "80mm" : "A4"}.pdf`);
+  await savePdfDoc(pdf, `${data.record.reference_number}-${thermal ? "80mm" : "A4"}.pdf`);
 }
 function shareDoc(data: any, title: string) {
   const phone = String(
@@ -1452,7 +1466,7 @@ function DocumentActions({ data, title }: { data: any; title: string }) {
         <Printer size={16} />
         80mm
       </button>
-      <button className="secondary" onClick={() => window.print()}>
+      <button className="secondary" onClick={(e) => printDocumentSheet(e.currentTarget, title)}>
         <Printer size={16} />
         Print
       </button>

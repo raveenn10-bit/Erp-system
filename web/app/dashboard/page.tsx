@@ -48,6 +48,7 @@ import {
   ChevronRight,
   ReceiptText,
   UserRound,
+  BookOpen,
   Wallet,
   MoreHorizontal,
   TrendingUp,
@@ -55,7 +56,10 @@ import {
 } from "lucide-react";
 import { api, idempotency, money } from "@/lib/api";
 import { InvoiceActions } from "@/components/invoice-actions";
-import { ThermalPrinterSettings } from "@/components/thermal-settings";
+import { BiometricSettings } from "@/components/biometric-login";
+import { UserGuide } from "@/components/user-guide";
+import { disableBiometric } from "@/lib/biometric";
+import { isNative } from "@/lib/native";
 import { ReportsPanel } from "@/components/reports-panel";
 import {
   NotificationBellAndDrawer,
@@ -149,11 +153,14 @@ const menu = [
   { name: "Team", si: "කණ්ඩායම", icon: Users },
   { name: "Settings", si: "සැකසුම්", icon: Settings },
   { name: "Profile", si: "මගේ ගිණුම", icon: UserRound },
+  { name: "Help", si: "මාර්ගෝපදේශය", icon: BookOpen },
 ];
 const siLabel = (name: string) => menu.find((m) => m.name === name)?.si || "";
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 20000 } },
 });
+// Offline sync finished uploading: refresh every screen so PENDING items show their server numbers.
+if (typeof window !== "undefined") window.addEventListener("erp-synced", () => { queryClient.invalidateQueries(); });
 export default function Dashboard() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -185,6 +192,15 @@ function Workspace() {
   useEffect(() => {
     if (me.isError) router.replace("/login");
   }, [me.isError, router]);
+  // Android back button: close the drawer first, then return to Overview.
+  useEffect(() => {
+    const onBack = (e: Event) => {
+      if (open) { setOpen(false); e.preventDefault(); }
+      else if (tab !== "Overview") { setTab("Overview"); e.preventDefault(); }
+    };
+    window.addEventListener("erp-back", onBack);
+    return () => window.removeEventListener("erp-back", onBack);
+  }, [open, tab]);
   const user = me.data?.user;
   const summary = useQuery({
     queryKey: ["dashboard"],
@@ -302,7 +318,17 @@ function Workspace() {
   ];
   const inBottom = bottomItems.some((b) => b.name === tab);
   async function signOut() {
-    await api("/logout", { method: "POST" });
+    // Sign out revokes the server session, so the biometric credential
+    // protecting it is useless: remove it from this phone as well.
+    if (isNative()) {
+      const off = await import("@/lib/offline/store");
+      const st = off.getSyncState();
+      const waiting = st.pending + st.conflicts + st.failed;
+      if (waiting && !confirm(`${waiting} item(s) are saved on this phone and not yet on the server. They stay on the phone and upload after you sign in again. Sign out anyway?`)) return;
+      await off.clearCache().catch(() => {});
+    }
+    await disableBiometric();
+    await api("/logout", { method: "POST" }).catch(() => {});
     router.replace("/login");
   }
   return (
@@ -824,13 +850,14 @@ function Workspace() {
               <FormPanel title="Invoice print settings">
                 <BillingSettings />
               </FormPanel>
-              <ThermalPrinterSettings businessName={settings.data?.name || ""} />
               <CreditAlertSettingsPanel />
               <div style={{ marginTop: 20 }}>
+                <BiometricSettings />
                 <ChangePasswordPanel />
               </div>
             </>
           )}
+          {tab === "Help" && <UserGuide user={user} />}
           {tab === "Profile" && (
             <>
               <Lead
@@ -850,6 +877,7 @@ function Workspace() {
                 </button>
               </div>
               <div style={{ marginTop: 20 }}>
+                <BiometricSettings />
                 <ChangePasswordPanel />
               </div>
             </>

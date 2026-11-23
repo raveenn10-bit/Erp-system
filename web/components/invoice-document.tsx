@@ -1,266 +1,157 @@
-"use client";
-import { Phone, MessageCircle, Mail, MapPin } from "lucide-react";
-import { amount, lkr, type InvoiceModel, type ThermalSettings } from "@/lib/invoice-model";
+'use client';
+// Presentation of the authoritative InvoiceModel. The same markup is used for
+// the on-screen preview, the A4 PDF, A4 printing and the thermal receipt.
+import { formatDate, lkr, paginate, type InvoiceModel } from '@/lib/invoice/model';
 
-/** A4 commercial invoice — used for the on-screen preview and for A4 printing. */
-export function InvoiceDocument({ model }: { model: InvoiceModel }) {
-  const b = model.business;
-  const status = model.cancelled
-    ? "Cancelled"
-    : model.outstandingCents > 0
-      ? model.paidCents > 0
-        ? "Partially paid"
-        : "Unpaid"
-      : "Paid";
+export const A4_PX = { width: 794, height: 1123 }; // 210×297 mm at 96 dpi
+
+function Header({ m, compact }: { m: InvoiceModel; compact?: boolean }) {
+  const contacts = [m.business.phone && `Tel ${m.business.phone}`, m.business.whatsapp && `WhatsApp ${m.business.whatsapp}`, m.business.email].filter(Boolean).join('  ·  ');
   return (
-    <article className="inv-a4" aria-label={`Invoice ${model.number}`}>
-      <div className="inv-topbar" aria-hidden="true" />
-      <header className="inv-head">
-        <div className="inv-brand">
-          <img src="/nugathalawa-logo.jpg" alt="" className="inv-logo" />
-          <div>
-            <h1>{b.name}</h1>
-            {b.address && <p>{b.address}</p>}
-            {(b.phone || b.whatsapp) && (
-              <p>
-                {b.phone && <>Tel: {b.phone}</>}
-                {b.phone && b.whatsapp && <>&nbsp;&nbsp;</>}
-                {b.whatsapp && <>WhatsApp: {b.whatsapp}</>}
-              </p>
-            )}
-            {b.email && <p>{b.email}</p>}
-          </div>
-        </div>
-        <div className="inv-title">
-          <h2 className={model.cancelled ? "cancelled" : ""}>
-            {model.cancelled ? "CANCELLED" : "INVOICE"}
-          </h2>
-          <dl>
-            <dt>Invoice No</dt>
-            <dd>{model.number}</dd>
-            <dt>Invoice Date</dt>
-            <dd>
-              {model.dateLabel}
-              {model.timeLabel && `, ${model.timeLabel}`}
-            </dd>
-            {model.dueDate && (
-              <>
-                <dt>Due Date</dt>
-                <dd>{model.dueDate}</dd>
-              </>
-            )}
-          </dl>
-        </div>
-      </header>
-
-      <section className="inv-parties">
+    <header className={`inv-head ${compact ? 'compact' : ''}`}>
+      <div className="ninv-brand">
+        <img src="/nugathalawa-logo.jpg" alt="" crossOrigin="anonymous" />
         <div>
-          <span className="inv-label">Invoice to</span>
-          <strong className="inv-shop">{model.customer.shopName}</strong>
-          {model.customer.address && <p>{model.customer.address}</p>}
-          {model.customer.whatsapp && <p>WhatsApp: {model.customer.whatsapp}</p>}
+          <h1>{m.business.name}</h1>
+          {!compact && <p>{m.business.address}</p>}
+          {!compact && contacts && <p>{contacts}</p>}
         </div>
-        <div>
-          <span className="inv-label">Payment</span>
-          <dl className="inv-kv">
-            <dt>Method</dt>
-            <dd>{model.paymentMethod || "—"}</dd>
-            <dt>Terms</dt>
-            <dd>{model.paymentTerms || "—"}</dd>
-            <dt>Status</dt>
-            <dd>{status}</dd>
-          </dl>
-        </div>
-      </section>
-
-      <table className="inv-table">
-        <thead>
-          <tr>
-            <th className="c-no">#</th>
-            <th className="c-desc">Product Description</th>
-            <th className="c-type">Type</th>
-            <th className="num">Qty</th>
-            <th className="num">Unit Price</th>
-            <th className="num">Discount</th>
-            <th className="num">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {model.lines.map((l, i) => (
-            <tr key={l.id}>
-              <td className="c-no">{i + 1}</td>
-              <td className="c-desc">
-                <b>{l.description}</b>
-                <span className="inv-pack"> — {l.pack}</span>
-                {model.showShopPrice && l.shopPriceCents > 0 && (
-                  <small>Shop price: {lkr(l.shopPriceCents)}</small>
-                )}
-              </td>
-              <td className="c-type">{l.priceType || "—"}</td>
-              <td className="num">{l.quantity}</td>
-              <td className="num">{amount(l.unitCents)}</td>
-              <td className="num muted-cell">{l.discountCents ? `−${amount(l.discountCents)}` : "—"}</td>
-              <td className="num strong">{amount(l.lineCents)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <section className="inv-bottom">
-        <div className="inv-left-meta">
-          <div className="inv-contacts">
-            {b.phone && (
-              <div className="inv-contact-row">
-                <span className="inv-icon-box"><Phone size={13} /></span>
-                <span>{b.phone}</span>
-              </div>
-            )}
-            {b.whatsapp && (
-              <div className="inv-contact-row">
-                <span className="inv-icon-box"><MessageCircle size={13} /></span>
-                <span>WhatsApp: {b.whatsapp}</span>
-              </div>
-            )}
-            {b.email && (
-              <div className="inv-contact-row">
-                <span className="inv-icon-box"><Mail size={13} /></span>
-                <span>{b.email}</span>
-              </div>
-            )}
-            {b.address && (
-              <div className="inv-contact-row">
-                <span className="inv-icon-box"><MapPin size={13} /></span>
-                <span>{b.address}</span>
-              </div>
-            )}
-          </div>
-          {model.notes && (
-            <div className="inv-notes">
-              <span className="inv-label">Notes</span>
-              <p>{model.notes}</p>
-            </div>
-          )}
-        </div>
-        <div className="inv-totals">
-          <div>
-            <span>Subtotal</span>
-            <b>{lkr(model.subtotalCents)}</b>
-          </div>
-          {model.itemDiscountCents > 0 && (
-            <div>
-              <span>Item discounts</span>
-              <b>−{lkr(model.itemDiscountCents)}</b>
-            </div>
-          )}
-          {model.invoiceDiscountCents > 0 && (
-            <div>
-              <span>Invoice discount</span>
-              <b>−{lkr(model.invoiceDiscountCents)}</b>
-            </div>
-          )}
-          <div className="inv-grand">
-            <span>TOTAL</span>
-            <b>{lkr(model.totalCents)}</b>
-          </div>
-          <div className="inv-payment-info">
-            <span className="inv-label">Payment Info</span>
-            <div className="inv-pay-row"><span>Method:</span> <b>{model.paymentMethod || "Cash"}</b></div>
-            <div className="inv-pay-row"><span>Paid:</span> <b>{lkr(model.paidCents)}</b></div>
-            <div className="inv-pay-row"><span>Balance:</span> <b className={model.outstandingCents > 0 ? "inv-due" : "inv-clear"}>{lkr(model.outstandingCents)}</b></div>
-          </div>
-        </div>
-      </section>
-
-      {model.terms && (
-        <section className="inv-terms">
-          <span className="inv-label">Terms &amp; Conditions</span>
-          <p>{model.terms}</p>
-        </section>
-      )}
-
-      <section className="inv-signs">
-        <span>Issued By / Authorized Signature</span>
-        <span>Received By / Customer Signature</span>
-      </section>
-
-      <footer className="inv-foot">
-        <svg className="inv-leaf-svg" viewBox="0 0 320 140" preserveAspectRatio="none" aria-hidden="true">
-          <path d="M0,140 C60,50 180,20 320,140 L0,140 Z" fill="url(#leaf-lime-grad)" />
-          <path d="M0,140 C70,75 160,50 250,140 L0,140 Z" fill="url(#leaf-teal-grad)" />
-          <defs>
-            <linearGradient id="leaf-lime-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#92FD6F" />
-              <stop offset="100%" stopColor="#287E65" />
-            </linearGradient>
-            <linearGradient id="leaf-teal-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#287E65" />
-              <stop offset="100%" stopColor="#0C5051" />
-            </linearGradient>
-          </defs>
-        </svg>
-        <p>Thank you for your business · {b.name}</p>
-      </footer>
-    </article>
+      </div>
+      <div className="ninv-title">
+        <span>{m.status === 'cancelled' ? 'CANCELLED INVOICE' : 'SALES INVOICE'}</span>
+        <b>{m.number}</b>
+        {!compact && <dl>
+          <dt>Date</dt><dd>{formatDate(m.date)}</dd>
+          {m.dueDate && <><dt>Due</dt><dd>{formatDate(m.dueDate)}</dd></>}
+        </dl>}
+      </div>
+    </header>
   );
 }
 
-/** High-contrast thermal receipt for 58mm / 80mm / custom roll printers. */
-export function ThermalReceipt({
-  model,
-  settings,
-}: {
-  model: InvoiceModel;
-  settings: ThermalSettings;
-}) {
-  const style = {
-    width: `${settings.printableWidthMm}mm`,
-    fontSize: `${settings.fontSizePx}px`,
-  } as React.CSSProperties;
-  const row = (label: string, value: string, strong = false) => (
-    <div className={`rc-row${strong ? " strong" : ""}`}>
-      <span>{label}</span>
-      <span>{value}</span>
+function Table({ m, lines }: { m: InvoiceModel; lines: InvoiceModel['lines'] }) {
+  if (!lines.length) return null;
+  return (
+    <table className="ninv-table">
+      <thead>
+        <tr>
+          <th className="n">#</th><th>Product</th><th>Pack size</th><th className="r">Qty</th><th className="r">Unit price</th>
+          {m.showShopPrice && <th className="r">Shop price</th>}
+          <th className="r">Discount</th><th className="r">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {lines.map(l => (
+          <tr key={l.no}>
+            <td className="n">{l.no}</td><td className="p">{l.product}</td><td>{l.pack}</td>
+            <td className="r">{l.qty}</td><td className="r">{lkr(l.unit, false)}</td>
+            {m.showShopPrice && <td className="r">{l.shopPrice ? lkr(l.shopPrice, false) : '—'}</td>}
+            <td className="r">{l.discount ? lkr(-l.discount, false) : '—'}</td><td className="r b">{lkr(l.total, false)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function Totals({ m }: { m: InvoiceModel }) {
+  return (
+    <section className="ninv-bottom">
+      <div className="ninv-notes">
+        {m.paymentTerms && <p><b>Payment terms</b>{m.paymentTerms}</p>}
+        {m.notes && <p><b>Notes</b>{m.notes}</p>}
+        {m.terms && <p><b>Terms &amp; conditions</b>{m.terms}</p>}
+      </div>
+      <dl className="ninv-totals">
+        <dt>Subtotal</dt><dd>{lkr(m.subtotal)}</dd>
+        {m.itemDiscount > 0 && <><dt>Item discounts</dt><dd>{lkr(-m.itemDiscount)}</dd></>}
+        {m.invoiceDiscount > 0 && <><dt>Invoice discount</dt><dd>{lkr(-m.invoiceDiscount)}</dd></>}
+        <dt className="grand">Grand total</dt><dd className="grand">{lkr(m.total)}</dd>
+        <dt>Paid</dt><dd>{lkr(m.paid)}</dd>
+        <dt className="due">Outstanding balance</dt><dd className="due">{lkr(m.outstanding)}</dd>
+      </dl>
+    </section>
+  );
+}
+
+/** Paginated A4 invoice. Each `.ninv-page` is exactly one printed/PDF page. */
+export function InvoiceA4({ m }: { m: InvoiceModel }) {
+  const pages = paginate(m.lines);
+  return (
+    <div className="ninv-doc">
+      {pages.map((lines, p) => {
+        const last = p === pages.length - 1;
+        return (
+          <article className="ninv-page" key={p}>
+            <div className="ninv-band" />
+            <Header m={m} compact={p > 0} />
+            {p === 0 && (
+              <section className="ninv-parties">
+                <div>
+                  <span>Bill to</span>
+                  <b>{m.customer.name}</b>
+                  {m.customer.address && <p>{m.customer.address}</p>}
+                  {m.showCustomerWhatsapp && m.customer.whatsapp && <p>WhatsApp {m.customer.whatsapp}</p>}
+                </div>
+                <div>
+                  <span>Payment</span>
+                  <b>{m.paymentMethod || '—'}</b>
+                  <p>Paid {lkr(m.paid)} of {lkr(m.total)}</p>
+                  {m.dueDate && <p>Balance due by {formatDate(m.dueDate)}</p>}
+                </div>
+              </section>
+            )}
+            <Table m={m} lines={lines} />
+            {!last && <p className="ninv-cont">Continued on next page…</p>}
+            {last && <>
+              <Totals m={m} />
+              <section className="ninv-sign">
+                <div><i /><span>Authorized signature</span><small>For {m.business.name}</small></div>
+                <div><i /><span>Customer signature</span><small>Received in good condition</small></div>
+              </section>
+            </>}
+            <footer className="ninv-foot">
+              <span>Thank you for your business · ස්තුතියි</span>
+              <span>{m.number} · Page {p + 1} of {pages.length}</span>
+            </footer>
+          </article>
+        );
+      })}
     </div>
   );
+}
+
+/** Black-and-white receipt rendered at the printer's dot width (58mm=384, 80mm=576). */
+export function InvoiceReceipt({ m, dots }: { m: InvoiceModel; dots: number }) {
+  const fs = dots >= 520 ? 24 : 21;
   return (
-    <div className="receipt" style={style}>
-      <div className="rc-center">
-        {settings.showLogo && <img src="/nugathalawa-logo.jpg" alt="" className="rc-logo" />}
-        <div className="rc-biz">{model.business.name}</div>
-        {model.business.address && <div>{model.business.address}</div>}
-        {model.business.phone && <div>Tel: {model.business.phone}</div>}
-      </div>
-      <hr />
-      <div className="rc-center strong">{model.cancelled ? "CANCELLED RECEIPT" : "SALES RECEIPT"}</div>
-      <div>Invoice: {model.number}</div>
-      <div>
-        Date: {model.dateLabel}
-        {model.timeLabel && ` ${model.timeLabel}`}
-      </div>
-      <div>Customer: {model.customer.shopName}</div>
-      <hr />
-      {model.lines.map((l) => (
-        <div key={l.id} className="rc-item">
-          <div className="strong">
-            {l.description} {l.pack}
-          </div>
-          {row(`${l.quantity} x ${amount(l.unitCents)}`, amount(l.lineCents))}
-          {l.discountCents > 0 && row("Discount", `-${amount(l.discountCents)}`)}
+    <div className="rcpt" style={{ width: dots, fontSize: fs }}>
+      <div className="rcpt-c rcpt-b" style={{ fontSize: fs * 1.15 }}>{m.business.name}</div>
+      {m.business.address && <div className="rcpt-c">{m.business.address}</div>}
+      {m.business.phone && <div className="rcpt-c">Tel {m.business.phone}</div>}
+      <div className="rcpt-hr" />
+      <div className="rcpt-c rcpt-b">SALES RECEIPT</div>
+      <div className="rcpt-row"><span>Invoice</span><span>{m.number}</span></div>
+      <div className="rcpt-row"><span>Date</span><span>{formatDate(m.date)}</span></div>
+      <div className="rcpt-row"><span>Customer</span><span className="rcpt-rt">{m.customer.name}</span></div>
+      {m.paymentMethod && <div className="rcpt-row"><span>Payment</span><span>{m.paymentMethod}</span></div>}
+      <div className="rcpt-hr" />
+      {m.lines.map(l => (
+        <div key={l.no} className="rcpt-item">
+          <div className="rcpt-b">{l.product} {l.pack && `· ${l.pack}`}</div>
+          <div className="rcpt-row"><span>{l.qty} × {lkr(l.unit, false)}{l.discount ? `  (-${lkr(l.discount, false)})` : ''}</span><span className="rcpt-b">{lkr(l.total, false)}</span></div>
         </div>
       ))}
-      <hr />
-      {row("Subtotal", lkr(model.subtotalCents))}
-      {model.itemDiscountCents > 0 && row("Item discounts", `-${lkr(model.itemDiscountCents)}`)}
-      {model.invoiceDiscountCents > 0 && row("Invoice discount", `-${lkr(model.invoiceDiscountCents)}`)}
-      {row("TOTAL", lkr(model.totalCents), true)}
-      {row("Paid", lkr(model.paidCents))}
-      {row("Balance", lkr(model.outstandingCents), true)}
-      {model.paymentMethod && <div>Payment: {model.paymentMethod}</div>}
-      <div className="rc-signs">
-        <span>Issued by</span>
-        <span>Received by</span>
-      </div>
-      <div className="rc-center">Thank you!</div>
+      <div className="rcpt-hr" />
+      <div className="rcpt-row"><span>Subtotal</span><span>{lkr(m.subtotal, false)}</span></div>
+      {m.itemDiscount + m.invoiceDiscount > 0 && <div className="rcpt-row"><span>Discounts</span><span>{lkr(-(m.itemDiscount + m.invoiceDiscount), false)}</span></div>}
+      <div className="rcpt-row rcpt-b rcpt-big" style={{ fontSize: fs * 1.25 }}><span>TOTAL</span><span>{lkr(m.total)}</span></div>
+      <div className="rcpt-row"><span>Paid</span><span>{lkr(m.paid, false)}</span></div>
+      <div className="rcpt-row rcpt-b"><span>Balance</span><span>{lkr(m.outstanding, false)}</span></div>
+      {m.dueDate && <div className="rcpt-row"><span>Due</span><span>{formatDate(m.dueDate)}</span></div>}
+      <div className="rcpt-hr" />
+      <div className="rcpt-sign"><div><i />Issued by</div><div><i />Received by</div></div>
+      <div className="rcpt-c" style={{ marginTop: fs * 0.6 }}>Thank you! · ස්තුතියි</div>
     </div>
   );
 }
