@@ -335,6 +335,29 @@ routes.get("/billing/settings", async (c) => {
   ).results;
   return c.json(Object.fromEntries(rows.map((x) => [x.key, x.value])));
 });
+// Read-only invoice/receipt presentation settings for anyone who can view invoices
+// (sales reps print bills but have no settings.view permission).
+routes.get("/billing/print-settings", async (c) => {
+  const denied = await guard(c, "invoices.view");
+  if (denied) return denied;
+  const rows = (
+    await c.env.DB.prepare(
+      "SELECT key,value FROM system_settings WHERE key IN('invoice_show_shop_price','invoice_show_customer_whatsapp','thermal_printer')",
+    ).all<{ key: string; value: string }>()
+  ).results;
+  const map = Object.fromEntries(rows.map((x) => [x.key, x.value]));
+  let thermal: unknown = null;
+  try {
+    thermal = map.thermal_printer ? JSON.parse(map.thermal_printer) : null;
+  } catch {
+    thermal = null;
+  }
+  return c.json({
+    showShopPrice: map.invoice_show_shop_price === "true",
+    showCustomerWhatsapp: map.invoice_show_customer_whatsapp !== "false",
+    thermal,
+  });
+});
 routes.patch("/billing/settings", async (c) => {
   const denied = await guard(c, "settings.edit");
   if (denied) return denied;
@@ -344,6 +367,17 @@ routes.patch("/billing/settings", async (c) => {
       showShopPrice: z.boolean().optional(),
       showCustomerWhatsapp: z.boolean().optional(),
       defaultTerms: z.string().max(1500).optional(),
+      thermalPrinter: z
+        .object({
+          paperWidthMm: z.number().min(40).max(120),
+          printableWidthMm: z.number().min(30).max(120),
+          fontSizePx: z.number().min(8).max(18),
+          marginMm: z.number().min(0).max(10),
+          showLogo: z.boolean(),
+          copies: z.number().int().min(1).max(5),
+        })
+        .refine((t) => t.printableWidthMm <= t.paperWidthMm, "Printable width cannot exceed paper width")
+        .optional(),
     }),
   );
   const stmts: any[] = [];
@@ -359,6 +393,13 @@ routes.patch("/billing/settings", async (c) => {
       c.env.DB.prepare(
         "INSERT INTO system_settings(key,value) VALUES('invoice_show_customer_whatsapp',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
       ).bind(String(d.showCustomerWhatsapp)),
+    );
+  }
+  if (d.thermalPrinter !== undefined) {
+    stmts.push(
+      c.env.DB.prepare(
+        "INSERT INTO system_settings(key,value) VALUES('thermal_printer',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+      ).bind(JSON.stringify(d.thermalPrinter)),
     );
   }
   if (d.defaultTerms !== undefined) {
