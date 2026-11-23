@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Printer, ReceiptText, Save } from "lucide-react";
 import { api } from "@/lib/api";
 import { sanitizeThermal, type InvoiceModel, type ThermalSettings } from "@/lib/invoice-model";
-import { PrintRoot, runPrint, usePrintSettings } from "./invoice-actions";
+import { PrintRoot, clearPrint, runPrint, usePrintSettings } from "./invoice-actions";
 import { ThermalReceipt } from "./invoice-document";
 
 /** Clearly-labelled sample used only for the test print — never saved. */
@@ -67,12 +67,10 @@ export function ThermalPrinterSettings({ businessName }: { businessName: string 
       setMsg((err as Error).message);
     }
   }
+  useEffect(() => () => clearPrint(), []);
   function testPrint() {
     setPrinting(true);
-    setTimeout(() => {
-      runPrint("thermal", s);
-      setTimeout(() => setPrinting(false), 2000);
-    }, 30);
+    setTimeout(() => runPrint("thermal", s), 30);
   }
   const model = testModel(businessName);
   return (
@@ -129,8 +127,9 @@ export function ThermalPrinterSettings({ businessName }: { businessName: string 
       </div>
       <p className="muted" style={{ fontSize: 13, marginTop: 14 }}>
         Bills print through the browser's print dialog to a printer paired with this phone or computer (Bluetooth or USB).
-        Pair the printer in Android or Windows settings first. iPhone Safari can only reach AirPrint printers, so most
-        Bluetooth thermal printers won't work from an iPhone.
+        Pair the printer in Android or Windows settings first. If your Android phone has no print service for the printer,
+        use <b>Share Bill</b> on an invoice and choose a Bluetooth printer app such as RawBT. iPhone Safari can only reach
+        AirPrint printers, so most Bluetooth thermal printers won't work from an iPhone.
       </p>
       {msg && <p className={msg.includes("saved") ? "badge" : "error"} style={{ marginTop: 10 }}>{msg}</p>}
       <div className="form-actions">
