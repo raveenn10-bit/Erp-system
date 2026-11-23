@@ -73,7 +73,7 @@ function thermalPageCss(t?: ThermalSettings, heightMm = 200) {
   return `@page { size: ${w}mm ${heightMm + m * 2}mm; margin: ${m}mm; }`;
 }
 export function runPrint(mode: "a4" | "thermal", thermal?: ThermalSettings) {
-  const token = ++printToken;
+  printToken++;
   const style = document.createElement("style");
   style.id = "invoice-page-size";
   style.textContent =
@@ -84,21 +84,25 @@ export function runPrint(mode: "a4" | "thermal", thermal?: ThermalSettings) {
   document.head.appendChild(style);
   document.body.classList.remove("print-a4", "print-thermal");
   document.body.classList.add("print-invoice", `print-${mode}`);
-  const cleanup = () => {
-    if (token !== printToken) return; // a newer print job owns the page now
-    document.body.classList.remove("print-invoice", "print-a4", "print-thermal");
-    style.remove();
-  };
-  window.addEventListener("afterprint", cleanup, { once: true });
+  // NOTE: no cleanup on "afterprint" or a timer. Mobile browsers (Android Chrome,
+  // iOS Safari) return from print() immediately and fire afterprint before the
+  // preview is rendered; removing the print layout then produced a blank page.
+  // The print layout only affects @media print, so it is safe to leave in place
+  // until the viewer closes (clearPrint) or the next print replaces it.
   // let React paint the print root, then wait for images (logo) to decode
   requestAnimationFrame(async () => {
     if (mode === "thermal") style.textContent = thermalPageCss(thermal, measureReceiptMm());
     const imgs = Array.from(document.querySelectorAll<HTMLImageElement>(".print-root img"));
     await Promise.all(imgs.map((i) => (i.complete ? Promise.resolve() : i.decode().catch(() => undefined))));
     window.print();
-    // Safari on iOS may not fire afterprint
-    setTimeout(cleanup, 1500);
   });
+}
+
+/** Remove the print layout; called when the invoice viewer / settings panel unmounts. */
+export function clearPrint() {
+  printToken++;
+  document.body.classList.remove("print-invoice", "print-a4", "print-thermal");
+  document.getElementById("invoice-page-size")?.remove();
 }
 
 export function PrintRoot({
@@ -203,7 +207,18 @@ export function InvoiceActions({ id, close }: { id: string; close: () => void })
     if (!model) return;
     setBusy("receipt");
     try {
-      downloadBlob(await buildThermalPdf(model, thermal), pdfFileName(model, "receipt"));
+      const blob = await buildThermalPdf(model, thermal);
+      const file = new File([blob], pdfFileName(model, "receipt"), { type: "application/pdf" });
+      if (canShareFiles(file)) {
+        try {
+          // lets Android users send the bill straight to a Bluetooth printer app (e.g. RawBT)
+          await navigator.share({ files: [file], title: `Bill ${model.number}` });
+          return;
+        } catch (err) {
+          if ((err as Error).name === "AbortError") return;
+        }
+      }
+      downloadBlob(blob, file.name);
     } catch (e) {
       setNotice({ kind: "err", text: `Could not create the receipt PDF: ${(e as Error).message}` });
     } finally {
@@ -286,6 +301,7 @@ export function InvoiceActions({ id, close }: { id: string; close: () => void })
     }
   }
 
+  useEffect(() => () => clearPrint(), []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
     window.addEventListener("keydown", onKey);
@@ -404,9 +420,9 @@ export function InvoiceActions({ id, close }: { id: string; close: () => void })
               <span>Print Bill</span>
               <small>{thermal.paperWidthMm}mm</small>
             </button>
-            <button className="secondary" onClick={downloadReceiptPdf} disabled={busy === "receipt"} title="Receipt as PDF">
-              <Download size={16} />
-              <span>Receipt PDF</span>
+            <button className="secondary" onClick={downloadReceiptPdf} disabled={busy === "receipt"} title="Bill as PDF (send to a printer app)">
+              {canNativeShare ? <Share2 size={16} /> : <Download size={16} />}
+              <span>{canNativeShare ? "Share Bill" : "Bill PDF"}</span>
             </button>
           </div>
         )}
