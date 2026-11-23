@@ -28,8 +28,8 @@ function setupTestDb() {
 
   const now = '2026-11-22T00:00:00Z';
   // Insert users: 1 admin, 1 rep
-  db.prepare('INSERT INTO users VALUES(?,?,?,?,?,?,?)').run('admin-1', 'Sanjeewa Admin', 'admin@example.lk', 'hash', 'admin', 1, now);
-  db.prepare('INSERT INTO users VALUES(?,?,?,?,?,?,?)').run('rep-1', 'Nimal Rep', 'rep@example.lk', 'hash', 'sales_rep', 1, now);
+  db.prepare('INSERT INTO users(id, name, email, password_hash, role_id, active, created_at) VALUES(?,?,?,?,?,?,?)').run('admin-1', 'Sanjeewa Admin', 'admin@example.lk', 'hash', 'admin', 1, now);
+  db.prepare('INSERT INTO users(id, name, email, password_hash, role_id, active, created_at) VALUES(?,?,?,?,?,?,?)').run('rep-1', 'Nimal Rep', 'rep@example.lk', 'hash', 'sales_rep', 1, now);
 
   // Insert customers (high credit limit for multi-invoice testing)
   db.prepare('INSERT INTO customers VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')

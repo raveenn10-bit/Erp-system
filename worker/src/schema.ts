@@ -2,7 +2,7 @@ import {sqliteTable, text, integer, primaryKey, uniqueIndex, index} from 'drizzl
 const id = () => text('id').primaryKey();
 const date = () => text('created_at').notNull();
 export const businessSettings=sqliteTable('business_settings',{id:integer('id').primaryKey(),name:text('name').notNull(),address:text('address').notNull(),email:text('email').notNull(),phone:text('phone').notNull(),whatsapp:text('whatsapp').notNull()});
-export const users=sqliteTable('users',{id:id(),name:text('name').notNull(),email:text('email').notNull(),passwordHash:text('password_hash').notNull(),roleId:text('role_id').notNull(),active:integer('active').notNull(),createdAt:date()},t=>[uniqueIndex('users_email').on(t.email)]);
+export const users=sqliteTable('users',{id:id(),name:text('name').notNull(),username:text('username'),email:text('email').notNull(),passwordHash:text('password_hash').notNull(),passcodeHash:text('passcode_hash'),roleId:text('role_id').notNull(),active:integer('active').notNull(),createdAt:date()},t=>[uniqueIndex('users_email').on(t.email),uniqueIndex('users_username').on(t.username)]);
 export const roles=sqliteTable('roles',{id:id(),name:text('name').notNull(),admin:integer('admin').notNull()});
 export const permissions=sqliteTable('permissions',{key:text('key').primaryKey(),description:text('description').notNull()});
 export const rolePermissions=sqliteTable('role_permissions',{roleId:text('role_id').notNull(),permissionKey:text('permission_key').notNull()},t=>[primaryKey({columns:[t.roleId,t.permissionKey]})]);

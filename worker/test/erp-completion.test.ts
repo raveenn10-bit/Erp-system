@@ -19,7 +19,7 @@ function setupTestDb() {
   }
 
   const now = '2026-11-22T10:00:00Z';
-  db.prepare('INSERT INTO users VALUES(?,?,?,?,?,?,?)').run('admin', 'Admin User', 'admin@example.lk', 'hash', 'admin', 1, now);
+  db.prepare('INSERT INTO users(id, name, email, password_hash, role_id, active, created_at) VALUES(?,?,?,?,?,?,?)').run('admin', 'Admin User', 'admin@example.lk', 'hash', 'admin', 1, now);
   db.prepare('INSERT INTO categories VALUES(?,?)').run('tea', 'Ceylon Tea');
   db.prepare('INSERT INTO products VALUES(?,?,?,?,?,?,?)').run('p1', 'tea', 'Nugathalawa BOPF', 'TEA-BOPF', null, 1, now);
   db.prepare('INSERT INTO product_variants(id,product_id,label,unit,grams,retail_cents,wholesale_cents,cost_cents,low_stock,shop_price_cents) VALUES(?,?,?,?,?,?,?,?,?,?)')

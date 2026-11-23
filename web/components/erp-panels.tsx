@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   X, ArrowLeft, Building2, CreditCard, FileText, Gift, PackageCheck,
@@ -754,48 +754,149 @@ export function CreditNotesPanel({
 }
 
 // ═══════════════════════════════════════════════════════════════
-// CHANGE PASSWORD PANEL
+// CHANGE PASSWORD & CREDENTIALS PANEL
 // ═══════════════════════════════════════════════════════════════
 export function ChangePasswordPanel() {
+  const [username, setUsername] = useState("");
+  const [passcode, setPasscode] = useState("");
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
   const [flash, setFlash] = useState("");
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    api<{ user: { id: string; name: string; username?: string; email?: string; admin: number } }>("/me")
+      .then((res) => {
+        if (res.user?.username) setUsername(res.user.username);
+      })
+      .catch(() => {});
+  }, []);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (next !== confirm) return setFlash("New passwords do not match");
-    if (next.length < 8) return setFlash("Password must be at least 8 characters");
+    if (next) {
+      if (next !== confirm) return setFlash("New passwords do not match");
+      if (next.length < 6) return setFlash("Password must be at least 6 characters");
+    }
+    if (passcode && !/^\d{4}$/.test(passcode)) {
+      return setFlash("Passcode must be exactly 4 digits (e.g. 2026)");
+    }
     setLoading(true);
     try {
+      const payload: Record<string, string> = {};
+      if (username) payload.username = username.trim();
+      if (passcode) payload.passcode = passcode.trim();
+      if (next) {
+        if (current) payload.current = current;
+        payload.next = next;
+      }
       await api("/change-password", {
         method: "POST",
-        body: JSON.stringify({ current, next }),
+        body: JSON.stringify(payload),
       });
-      setFlash("Password changed successfully ✓ — you have been signed out.");
-      setCurrent(""); setNext(""); setConfirm("");
-      setTimeout(() => { window.location.href = "/login"; }, 2500);
+      setFlash("Credentials updated successfully ✓ (පිවිසුම් තොරතුරු සාර්ථකව සුරකින ලදී)");
+      setCurrent("");
+      setNext("");
+      setConfirm("");
+      setPasscode("");
     } catch (err) {
-      setFlash((err as Error).message || "Failed to change password");
+      setFlash((err as Error).message || "Failed to update credentials");
     }
     setLoading(false);
   }
 
   return (
-    <div className="panel form-panel" style={{ maxWidth: 480 }}>
-      <div className="panel-head"><h3>Change password</h3></div>
+    <div className="panel form-panel" style={{ maxWidth: 520 }}>
+      <div className="panel-head">
+        <div>
+          <h3 style={{ margin: 0 }}>ගිණුම් පිවිසුම් හා ආරක්ෂක සැකසුම් (Account Credentials)</h3>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--brand-text-muted, #647773)" }}>
+            පරිශීලක නාමය (Username), මුරපදය (Password), සහ අංක 4 ක්ෂණික PIN කේතය වෙනස් කරන්න.
+          </p>
+        </div>
+      </div>
       {flash && (
-        <div style={{ background: flash.includes("✓") ? "var(--success-soft)" : "var(--danger-soft)", color: flash.includes("✓") ? "var(--success-strong)" : "var(--danger-strong)", padding: "10px 16px", borderRadius: 8, margin: "0 0 12px", fontSize: 13, fontWeight: 600 }}>{flash}</div>
+        <div
+          style={{
+            background: flash.includes("✓") ? "var(--success-soft, #e6f6ef)" : "var(--danger-soft, #fff1ef)",
+            color: flash.includes("✓") ? "var(--success-strong, #168064)" : "var(--danger-strong, #a53332)",
+            padding: "10px 16px",
+            borderRadius: 8,
+            margin: "0 0 16px",
+            fontSize: 13,
+            fontWeight: 600,
+          }}
+        >
+          {flash}
+        </div>
       )}
       <form onSubmit={submit}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <label>Current password<input type="password" value={current} onChange={e => setCurrent(e.target.value)} required autoComplete="current-password" /></label>
-          <label>New password (min 8 chars)<input type="password" value={next} onChange={e => setNext(e.target.value)} required minLength={8} autoComplete="new-password" /></label>
-          <label>Confirm new password<input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} required autoComplete="new-password" /></label>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <label>
+            පරිශීලක නාමය (Username)
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="e.g. Admin or your username"
+              autoComplete="username"
+            />
+          </label>
+          <label>
+            අංක 4 ක්ෂණික පිවිසුම් කේතය (4-Digit Quick PIN)
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={4}
+              value={passcode}
+              onChange={(e) => setPasscode(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              placeholder="e.g. 2026"
+            />
+            <small style={{ color: "var(--brand-text-muted, #647773)", marginTop: 2 }}>
+              ජංගම දුරකථනයෙන් හෝ ටැබ්ලට් එකෙන් ඉක්මනින් ලොග් වීමට අංක 4 PIN කේතයක් සකසන්න.
+            </small>
+          </label>
+          <hr style={{ border: "none", borderTop: "1px solid var(--brand-border, #DDEBE5)", margin: "4px 0" }} />
+          <strong style={{ fontSize: 14, color: "var(--brand-text, #142C2A)" }}>
+            මුරපදය වෙනස් කිරීම (Change Password - Optional)
+          </strong>
+          <label>
+            Current password (වත්මන් මුරපදය)
+            <input
+              type="password"
+              value={current}
+              onChange={(e) => setCurrent(e.target.value)}
+              autoComplete="current-password"
+              placeholder="Leave blank if only updating username or PIN"
+            />
+          </label>
+          <label>
+            New password (නව මුරපදය)
+            <input
+              type="password"
+              value={next}
+              onChange={(e) => setNext(e.target.value)}
+              minLength={6}
+              autoComplete="new-password"
+              placeholder="New password (min 6 characters)"
+            />
+          </label>
+          <label>
+            Confirm new password (තහවුරු කරන්න)
+            <input
+              type="password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              autoComplete="new-password"
+              placeholder="Repeat new password"
+            />
+          </label>
         </div>
-        <div className="form-actions">
-          <button className="primary" disabled={loading}>{loading ? "Saving…" : "Change password"}</button>
+        <div className="form-actions" style={{ marginTop: 18 }}>
+          <button className="primary" disabled={loading}>
+            {loading ? "Saving…" : "Save Changes (සුරකින්න)"}
+          </button>
         </div>
       </form>
     </div>

@@ -25,7 +25,13 @@ import { renderPublicInvoiceHtml } from "./public-invoice";
 const app = new Hono<Env>();
 const safe = z.string().trim().min(1).max(180);
 const key = z.string().min(12).max(128);
-const loginSchema = z.object({ email: z.email(), password: z.string().min(8) });
+const loginSchema = z.object({
+  username: z.string().optional(),
+  email: z.string().optional(),
+  login: z.string().optional(),
+  password: z.string().optional(),
+  passcode: z.string().regex(/^\d{4}$/, "Passcode must be 4 digits").optional(),
+});
 const productSchema = z.object({
   name: safe,
   sku: safe,
@@ -141,30 +147,88 @@ app.post("/api/setup", async (c) => {
   return c.json({ ok: true }, 201);
 });
 app.post("/api/login", async (c) => {
-  const { email, password } = await json(c, loginSchema);
-  const login = email.toLowerCase();
+  const d = await json(c, loginSchema);
+  const identifier = (d.username || d.login || d.email || "").trim();
   const db = c.env.DB;
+  const rateKey = identifier ? identifier.toLowerCase() : `pin_${c.req.header("cf-connecting-ip") || "local"}`;
+
   const attempt = await db
     .prepare("SELECT attempts,window_start FROM login_attempts WHERE key=?")
-    .bind(login)
+    .bind(rateKey)
     .first<{ attempts: number; window_start: string }>();
   if (
     attempt &&
     Date.now() - Date.parse(attempt.window_start) < 900000 &&
-    attempt.attempts >= 5
+    attempt.attempts >= 10
   )
     return c.json({ error: "Too many attempts. Try later." }, 429);
-  const u = await db
-    .prepare("SELECT id,password_hash,active FROM users WHERE email=?")
-    .bind(login)
-    .first<{ id: string; password_hash: string; active: number }>();
-  if (!u || !u.active || !(await verifyPassword(password, u.password_hash))) {
+
+  type UserRow = {
+    id: string;
+    password_hash: string;
+    passcode_hash: string | null;
+    active: number;
+    name: string;
+    username: string | null;
+    email: string;
+  };
+  let u: UserRow | null = null;
+
+  if (d.passcode) {
+    if (identifier) {
+      const candidate = await db
+        .prepare(
+          "SELECT id,password_hash,passcode_hash,active,name,username,email FROM users WHERE LOWER(username)=LOWER(?) OR LOWER(email)=LOWER(?)",
+        )
+        .bind(identifier, identifier)
+        .first<UserRow>();
+      if (
+        candidate &&
+        candidate.active &&
+        candidate.passcode_hash &&
+        (await verifyPassword(d.passcode, candidate.passcode_hash))
+      ) {
+        u = candidate;
+      }
+    } else {
+      const candidates = await db
+        .prepare(
+          "SELECT id,password_hash,passcode_hash,active,name,username,email FROM users WHERE active=1 AND passcode_hash IS NOT NULL",
+        )
+        .all<UserRow>();
+      for (const row of candidates.results || []) {
+        if (
+          row.passcode_hash &&
+          (await verifyPassword(d.passcode, row.passcode_hash))
+        ) {
+          u = row;
+          break;
+        }
+      }
+    }
+  } else if (d.password && identifier) {
+    const candidate = await db
+      .prepare(
+        "SELECT id,password_hash,passcode_hash,active,name,username,email FROM users WHERE LOWER(username)=LOWER(?) OR LOWER(email)=LOWER(?)",
+      )
+      .bind(identifier, identifier)
+      .first<UserRow>();
+    if (
+      candidate &&
+      candidate.active &&
+      (await verifyPassword(d.password, candidate.password_hash))
+    ) {
+      u = candidate;
+    }
+  }
+
+  if (!u || !u.active) {
     await db
       .prepare(
         `INSERT INTO login_attempts(key,attempts,window_start) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN window_start<? THEN 1 ELSE attempts+1 END,window_start=CASE WHEN window_start<? THEN excluded.window_start ELSE window_start END`,
       )
       .bind(
-        login,
+        rateKey,
         now(),
         new Date(Date.now() - 900000).toISOString(),
         new Date(Date.now() - 900000).toISOString(),
@@ -172,7 +236,8 @@ app.post("/api/login", async (c) => {
       .run();
     return c.json({ error: "Invalid credentials" }, 401);
   }
-  await db.prepare("DELETE FROM login_attempts WHERE key=?").bind(login).run();
+
+  await db.prepare("DELETE FROM login_attempts WHERE key=?").bind(rateKey).run();
   const token = uuid() + uuid();
   await db
     .prepare("INSERT INTO sessions VALUES(?,?,?,?,?)")
@@ -189,7 +254,10 @@ app.post("/api/login", async (c) => {
     sessionCookie(token, new URL(c.req.url).protocol === "https:"),
   );
   await audit(db, u.id, "login", u.id);
-  return c.json({ ok: true });
+  return c.json({
+    ok: true,
+    user: { id: u.id, name: u.name, username: u.username },
+  });
 });
 app.get("/view/invoice/:token", async (c) => {
   const token = c.req.param("token");
@@ -258,24 +326,59 @@ app.post("/api/change-password", async (c) => {
   const p = current(c),
     d = await json(
       c,
-      z.object({ current: z.string(), next: z.string().min(8).max(200) }),
+      z.object({
+        current: z.string().optional(),
+        next: z.string().min(6).max(200).optional(),
+        username: z.string().min(2).max(40).optional(),
+        passcode: z.string().regex(/^\d{4}$/, "Passcode must be 4 digits").optional(),
+      }),
     );
   const row = await c.env.DB.prepare(
-    "SELECT password_hash FROM users WHERE id=?",
+    "SELECT password_hash, passcode_hash FROM users WHERE id=?",
   )
     .bind(p.id)
-    .first<{ password_hash: string }>();
-  if (!row || !(await verifyPassword(d.current, row.password_hash)))
-    return c.json({ error: "Incorrect password" }, 403);
-  await c.env.DB.batch([
-    c.env.DB.prepare("UPDATE users SET password_hash=? WHERE id=?").bind(
-      await passwordHash(d.next),
+    .first<{ password_hash: string; passcode_hash: string | null }>();
+  if (!row) return c.json({ error: "User not found" }, 404);
+
+  if (d.next) {
+    if (d.current) {
+      if (!(await verifyPassword(d.current, row.password_hash))) {
+        return c.json({ error: "Incorrect current password" }, 403);
+      }
+    } else if (!p.admin) {
+      return c.json({ error: "Current password required" }, 400);
+    }
+  }
+
+  if (d.username) {
+    const existing = await c.env.DB.prepare(
+      "SELECT id FROM users WHERE LOWER(username)=LOWER(?) AND id!=?",
+    )
+      .bind(d.username.trim(), p.id)
+      .first();
+    if (existing) return c.json({ error: "Username already taken" }, 400);
+  }
+
+  const newPwHash = d.next ? await passwordHash(d.next) : null;
+  const newPinHash = d.passcode ? await passwordHash(d.passcode) : null;
+
+  await c.env.DB.prepare(
+    `UPDATE users SET
+      username = COALESCE(?, username),
+      password_hash = COALESCE(?, password_hash),
+      passcode_hash = COALESCE(?, passcode_hash)
+     WHERE id = ?`,
+  )
+    .bind(
+      d.username ? d.username.trim() : null,
+      newPwHash,
+      newPinHash,
       p.id,
-    ),
-    c.env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(p.id),
-  ]);
-  c.header("Set-Cookie", clearCookie(new URL(c.req.url).protocol === "https:"));
-  return c.json({ ok: true });
+    )
+    .run();
+
+  await audit(c.env.DB, p.id, "user.credentials_changed", p.id);
+  return c.json({ ok: true, relogin: false });
 });
 app.get("/api/settings", async (c) => {
   const denied = await guard(c, "settings.view");
@@ -312,7 +415,7 @@ app.get("/api/users", async (c) => {
   return c.json(
     (
       await c.env.DB.prepare(
-        "SELECT id,name,email,role_id,active,created_at FROM users ORDER BY created_at DESC LIMIT 500",
+        "SELECT id,name,username,email,role_id,active,created_at,(passcode_hash IS NOT NULL) AS has_passcode FROM users ORDER BY created_at DESC LIMIT 500",
       ).all()
     ).results,
   );
@@ -323,8 +426,10 @@ app.post("/api/users", async (c) => {
     c,
     z.object({
       name: safe,
-      email: z.email(),
-      password: z.string().min(8).max(200),
+      username: z.string().min(2).max(40),
+      email: z.string().email().optional(),
+      password: z.string().min(6).max(200),
+      passcode: z.string().regex(/^\d{4}$/, "Passcode must be 4 digits").optional(),
       roleId: z.string().min(1),
     }),
   );
@@ -332,13 +437,37 @@ app.post("/api/users", async (c) => {
     .bind(d.roleId)
     .first();
   if (!role) return c.json({ error: "Invalid role" }, 400);
+
+  const cleanUsername = d.username.trim();
+  const existingUser = await c.env.DB.prepare(
+    "SELECT id FROM users WHERE LOWER(username)=LOWER(?)",
+  )
+    .bind(cleanUsername)
+    .first();
+  if (existingUser) return c.json({ error: "Username already taken" }, 400);
+
+  const emailToUse = (d.email?.trim() || `${cleanUsername.toLowerCase()}@nugathalawa.erp`).toLowerCase();
+  const existingEmail = await c.env.DB.prepare(
+    "SELECT id FROM users WHERE LOWER(email)=LOWER(?)",
+  )
+    .bind(emailToUse)
+    .first();
+  if (existingEmail) return c.json({ error: "Email already taken" }, 400);
+
   const id = uuid();
+  const pwHash = await passwordHash(d.password);
+  const pinHash = d.passcode ? await passwordHash(d.passcode) : null;
+
   await c.env.DB.batch([
-    c.env.DB.prepare("INSERT INTO users VALUES(?,?,?,?,?,?,?)").bind(
+    c.env.DB.prepare(
+      "INSERT INTO users(id,name,username,email,password_hash,passcode_hash,role_id,active,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+    ).bind(
       id,
       d.name,
-      d.email.toLowerCase(),
-      await passwordHash(d.password),
+      cleanUsername,
+      emailToUse,
+      pwHash,
+      pinHash,
       d.roleId,
       1,
       now(),
@@ -355,28 +484,65 @@ app.post("/api/users", async (c) => {
 app.patch("/api/users/:id", async (c) => {
   if (!current(c).admin) return c.json({ error: "Forbidden" }, 403);
   const id = c.req.param("id");
-  if (id === current(c).id)
-    return c.json({ error: "Cannot change own account" }, 400);
   const d = await json(
     c,
-    z.object({ active: z.boolean().optional(), roleId: z.string().optional() }),
+    z.object({
+      name: safe.optional(),
+      username: z.string().min(2).max(40).optional(),
+      email: z.string().email().optional(),
+      password: z.string().min(6).max(200).optional(),
+      passcode: z.string().regex(/^\d{4}$/, "Passcode must be 4 digits").optional(),
+      active: z.boolean().optional(),
+      roleId: z.string().optional(),
+    }),
   );
+  if (id === current(c).id) {
+    if (d.active === false) return c.json({ error: "Cannot deactivate own admin account" }, 400);
+    if (d.roleId && d.roleId !== "admin") return c.json({ error: "Cannot change own admin role" }, 400);
+  }
+  if (d.username) {
+    const existing = await c.env.DB.prepare(
+      "SELECT id FROM users WHERE LOWER(username)=LOWER(?) AND id!=?",
+    )
+      .bind(d.username.trim(), id)
+      .first();
+    if (existing) return c.json({ error: "Username already taken" }, 400);
+  }
   if (d.roleId) {
     const r = await c.env.DB.prepare("SELECT id FROM roles WHERE id=?")
       .bind(d.roleId)
       .first();
     if (!r) return c.json({ error: "Invalid role" }, 400);
   }
-  await c.env.DB.batch([
-    c.env.DB.prepare(
-      "UPDATE users SET active=COALESCE(?,active),role_id=COALESCE(?,role_id) WHERE id=?",
-    ).bind(
-      d.active === undefined ? null : Number(d.active),
-      d.roleId ?? null,
-      id,
-    ),
-    c.env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(id),
-  ]);
+
+  const pwHash = d.password ? await passwordHash(d.password) : null;
+  const pinHash = d.passcode ? await passwordHash(d.passcode) : null;
+
+  await c.env.DB.prepare(
+    `UPDATE users SET 
+      name = COALESCE(?, name),
+      username = COALESCE(?, username),
+      email = COALESCE(?, email),
+      password_hash = COALESCE(?, password_hash),
+      passcode_hash = COALESCE(?, passcode_hash),
+      active = COALESCE(?, active),
+      role_id = COALESCE(?, role_id)
+     WHERE id = ?`,
+  ).bind(
+    d.name ?? null,
+    d.username ? d.username.trim() : null,
+    d.email ? d.email.toLowerCase() : null,
+    pwHash,
+    pinHash,
+    d.active === undefined ? null : Number(d.active),
+    d.roleId ?? null,
+    id,
+  ).run();
+
+  if (d.password || d.active === false) {
+    await c.env.DB.prepare("DELETE FROM sessions WHERE user_id=? AND token_hash!=COALESCE((SELECT token_hash FROM sessions WHERE user_id=? ORDER BY created_at DESC LIMIT 1), '')").bind(id, current(c).id).run();
+  }
+
   await audit(c.env.DB, current(c).id, "user.updated", id);
   return c.json({ ok: true });
 });
@@ -442,14 +608,46 @@ app.patch("/api/users/:id/permissions", async (c) => {
 app.post("/api/users/:id/reset-password", async (c) => {
   if (!current(c).admin) return c.json({ error: "Forbidden" }, 403);
   const id = c.req.param("id"),
-    d = await json(c, z.object({ newPassword: z.string().min(8).max(200) }));
-  await c.env.DB.batch([
-    c.env.DB.prepare("UPDATE users SET password_hash=? WHERE id=?").bind(
-      await passwordHash(d.newPassword),
+    d = await json(
+      c,
+      z.object({
+        newPassword: z.string().min(6).max(200).optional(),
+        newPasscode: z.string().regex(/^\d{4}$/, "Passcode must be 4 digits").optional(),
+        newUsername: z.string().min(2).max(40).optional(),
+      }),
+    );
+  if (!d.newPassword && !d.newPasscode && !d.newUsername) {
+    return c.json({ error: "No changes provided" }, 400);
+  }
+  if (d.newUsername) {
+    const existing = await c.env.DB.prepare(
+      "SELECT id FROM users WHERE LOWER(username)=LOWER(?) AND id!=?",
+    )
+      .bind(d.newUsername.trim(), id)
+      .first();
+    if (existing) return c.json({ error: "Username already taken" }, 400);
+  }
+  const pwHash = d.newPassword ? await passwordHash(d.newPassword) : null;
+  const pinHash = d.newPasscode ? await passwordHash(d.newPasscode) : null;
+
+  await c.env.DB.prepare(
+    `UPDATE users SET
+      username = COALESCE(?, username),
+      password_hash = COALESCE(?, password_hash),
+      passcode_hash = COALESCE(?, passcode_hash)
+     WHERE id = ?`,
+  )
+    .bind(
+      d.newUsername ? d.newUsername.trim() : null,
+      pwHash,
+      pinHash,
       id,
-    ),
-    c.env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(id),
-  ]);
+    )
+    .run();
+
+  if (d.newPassword) {
+    await c.env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(id).run();
+  }
   await audit(c.env.DB, current(c).id, "password.reset", id);
   return c.json({ ok: true });
 });

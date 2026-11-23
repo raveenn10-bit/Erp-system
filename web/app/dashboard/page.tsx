@@ -161,7 +161,13 @@ function Workspace() {
     [toast, setToast] = useState(""),
     [invoiceId, setInvoiceId] = useState<string | null>(null),
     [customerAccountId, setCustomerAccountId] = useState<string | null>(null),
-    [focusBilling, setFocusBilling] = useState(false);
+    [focusBilling, setFocusBilling] = useState(false),
+    [editingUser, setEditingUser] = useState<{ id: string; name: string; username?: string; role_id: string } | null>(null),
+    [editUsername, setEditUsername] = useState(""),
+    [editPassword, setEditPassword] = useState(""),
+    [editPasscode, setEditPasscode] = useState(""),
+    [editMsg, setEditMsg] = useState(""),
+    [editBusy, setEditBusy] = useState(false);
   const reduced = useReducedMotion();
   const me = useQuery({
     queryKey: ["me"],
@@ -696,39 +702,72 @@ function Workspace() {
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th>Name</th>
-                        <th>Email</th>
+                                                <th>Name (නම)</th>
+                        <th>Username (පරිශීලක නාමය)</th>
                         <th>Role</th>
+                        <th>4-Digit PIN</th>
                         <th>Status</th>
                         <th>Action</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {(staff.data || []).map((s) => (
+                      {(staff.data || []).map((s: any) => (
                         <tr key={s.id}>
-                          <td>{s.name}</td>
-                          <td>{s.email}</td>
-                          <td>{s.role_id}</td>
+                          <td><strong>{s.name}</strong></td>
+                          <td>
+                            <code style={{ background: "var(--brand-background, #F3FAF6)", padding: "3px 8px", borderRadius: 6, fontWeight: 700, color: "var(--brand-primary, #0C5051)" }}>
+                              {s.username || s.name.toLowerCase().replace(/\s+/g, '')}
+                            </code>
+                          </td>
+                          <td>
+                            <span className="badge" style={{ textTransform: "capitalize" }}>
+                              {s.role_id?.replace('_', ' ')}
+                            </span>
+                          </td>
+                          <td>
+                            {s.has_passcode ? (
+                              <span style={{ color: "var(--brand-primary, #0C5051)", fontWeight: 700 }}>✓ Configured</span>
+                            ) : (
+                              <span style={{ color: "var(--brand-text-muted, #647773)" }}>— Not set</span>
+                            )}
+                          </td>
                           <td>
                             <span className="badge">
                               {s.active ? "Active" : "Inactive"}
                             </span>
                           </td>
                           <td>
-                            {s.id !== user.id && (
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                               <button
+                                type="button"
                                 className="secondary"
-                                onClick={() =>
-                                  submit(
-                                    `/users/${s.id}`,
-                                    { active: !s.active },
-                                    "PATCH",
-                                  )
-                                }
+                                style={{ padding: "4px 10px", fontSize: 12 }}
+                                onClick={() => {
+                                  setEditingUser(s);
+                                  setEditUsername(s.username || "");
+                                  setEditPassword("");
+                                  setEditPasscode("");
+                                  setEditMsg("");
+                                }}
                               >
-                                {s.active ? "Deactivate" : "Activate"}
+                                Edit Credentials
                               </button>
-                            )}
+                              {s.id !== user.id && (
+                                <button
+                                  className="secondary"
+                                  style={{ padding: "4px 10px", fontSize: 12 }}
+                                  onClick={() =>
+                                    submit(
+                                      `/users/${s.id}`,
+                                      { active: !s.active },
+                                      "PATCH",
+                                    )
+                                  }
+                                >
+                                  {s.active ? "Deactivate" : "Activate"}
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1757,8 +1796,10 @@ function StaffForm({ submit }: { submit: (p: string, v: unknown) => void }) {
     const d = val(e);
     submit("/users", {
       name: d.name,
-      email: d.email,
+      username: d.username,
+      email: d.email || undefined,
       password: d.password,
+      passcode: d.passcode || undefined,
       roleId: d.roleId,
     });
     e.currentTarget.reset();
@@ -1767,19 +1808,27 @@ function StaffForm({ submit }: { submit: (p: string, v: unknown) => void }) {
     <form onSubmit={onSubmit}>
       <div className="form-grid">
         <label>
-          Full name
-          <input name="name" required />
+          Full name (සම්පූර්ණ නම)
+          <input name="name" required placeholder="e.g. Kamal Perera" />
         </label>
         <label>
-          Email
-          <input type="email" name="email" required />
+          Username (පරිශීලක නාමය)
+          <input name="username" required placeholder="e.g. kamal_rep" minLength={2} />
         </label>
         <label>
-          Temporary password (8+ characters)
-          <input name="password" type="password" minLength={8} required />
+          Password (මුරපදය)
+          <input name="password" type="password" minLength={6} required placeholder="Password (min 6 chars)" />
         </label>
         <label>
-          Role
+          4-Digit Quick PIN (අංක 4 කේතය - Optional)
+          <input name="passcode" type="password" inputMode="numeric" maxLength={4} placeholder="e.g. 1234" />
+        </label>
+        <label>
+          Email (ඊමේල් - Optional)
+          <input type="email" name="email" placeholder="Optional (defaults to username@nugathalawa.erp)" />
+        </label>
+        <label>
+          Role (භූමිකාව)
           <select name="roleId">
             <option value="sales_rep">Sales Representative</option>
             <option value="staff">Staff</option>
@@ -1788,7 +1837,7 @@ function StaffForm({ submit }: { submit: (p: string, v: unknown) => void }) {
         </label>
       </div>
       <div className="form-actions">
-        <button className="primary">Create account</button>
+        <button className="primary">Create account (ගිණුම සාදන්න)</button>
       </div>
     </form>
   );
