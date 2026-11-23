@@ -1,3 +1,4 @@
+import { parseFreeNote, FREE_PREFIX } from '../free-issue';
 // The single authoritative invoice model. Preview, A4 PDF, A4 print, thermal
 // receipt and WhatsApp share text are all produced from this object, so their
 // numbers can never disagree. Every amount comes from the server (integer
@@ -20,6 +21,8 @@ export type InvoiceDetail = {
 export type InvoiceLine = {
   no: number; product: string; pack: string; qty: number;
   unit: number; shopPrice: number | null; discount: number; total: number;
+  /** Free issue packets included in qty (their value is excluded from discount). */
+  freeQty?: number;
 };
 
 export type InvoiceModel = {
@@ -30,6 +33,8 @@ export type InvoiceModel = {
   lines: InvoiceLine[];
   showShopPrice: boolean; showCustomerWhatsapp: boolean;
   subtotal: number; itemDiscount: number; invoiceDiscount: number; total: number; paid: number; outstanding: number;
+  /** Value of free issue packets (shown separately, not as a discount). */
+  freeValue: number; freeCount: number;
   shareToken?: string;
 };
 
@@ -57,13 +62,24 @@ export function toInvoiceModel(d: InvoiceDetail, settings?: Record<string, strin
       address: i.business_address || '', phone: i.business_phone || '', whatsapp: i.business_whatsapp || '', email: i.business_email || '',
     },
     customer: { name: i.shop_name, address: i.address || '', whatsapp: i.customer_whatsapp || i.whatsapp || '' },
-    paymentMethod: i.payment_method ? i.payment_method[0].toUpperCase() + i.payment_method.slice(1) : '', paymentTerms: i.payment_terms || '', notes: i.notes || '', terms: i.terms || '',
-    lines: d.items.map((x, n) => ({
-      no: n + 1, product: x.name, pack: x.label, qty: x.quantity, unit: x.unit_price_cents,
-      shopPrice: showShopPrice && x.shop_price_cents ? x.shop_price_cents : null, discount: x.item_discount_cents, total: x.line_cents,
-    })),
+    paymentMethod: i.payment_method ? i.payment_method[0].toUpperCase() + i.payment_method.slice(1) : '', paymentTerms: i.payment_terms || '', notes: (i.notes || '').split('\n').filter(l => !l.startsWith(FREE_PREFIX)).join('\n'), terms: i.terms || '',
+    ...(() => {
+      const freeMap = parseFreeNote(i.notes || '');
+      let freeValue = 0, freeCount = 0;
+      const lines = d.items.map((x, n) => {
+        const fq = Math.min(freeMap.get(`${x.name} · ${x.label}`) || 0, x.quantity);
+        const fv = Math.min(fq * x.unit_price_cents, x.item_discount_cents);
+        freeValue += fv; freeCount += fq;
+        return {
+          no: n + 1, product: x.name, pack: x.label, qty: x.quantity, unit: x.unit_price_cents,
+          shopPrice: showShopPrice && x.shop_price_cents ? x.shop_price_cents : null,
+          discount: x.item_discount_cents - fv, total: x.line_cents, freeQty: fq || undefined,
+        };
+      });
+      return { lines, freeValue, freeCount, subtotal: i.subtotal_cents - freeValue, itemDiscount: i.item_discount_cents - freeValue };
+    })(),
     showShopPrice, showCustomerWhatsapp: settings?.invoice_show_customer_whatsapp !== 'false',
-    subtotal: i.subtotal_cents, itemDiscount: i.item_discount_cents, invoiceDiscount: i.invoice_discount_cents,
+    invoiceDiscount: i.invoice_discount_cents,
     total: i.total_cents, paid: i.paid_cents, outstanding: Math.max(0, i.total_cents - i.paid_cents),
     shareToken: i.share_token,
   };

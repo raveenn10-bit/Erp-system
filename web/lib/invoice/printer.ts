@@ -131,11 +131,12 @@ export function testReceiptModel(businessName = 'PRINTER TEST'): InvoiceModel {
     customer: { name: 'PRINTER TEST', address: '', whatsapp: '' },
     paymentMethod: 'Cash', paymentTerms: '', notes: '', terms: '',
     lines: [
-      { no: 1, product: 'Sample tea', pack: '100g', qty: 2, unit: 18000, shopPrice: null, discount: 0, total: 36000 },
+      { no: 1, product: 'Sample tea', pack: '100g', qty: 13, unit: 18000, shopPrice: null, discount: 0, total: 216000, freeQty: 1 },
       { no: 2, product: 'සිංහල අකුරු පරීක්ෂාව', pack: '50g', qty: 1, unit: 9000, shopPrice: null, discount: 0, total: 9000 },
     ],
+    freeValue: 18000, freeCount: 1,
     showShopPrice: false, showCustomerWhatsapp: false,
-    subtotal: 45000, itemDiscount: 0, invoiceDiscount: 0, total: 45000, paid: 45000, outstanding: 0,
+    subtotal: 225000, itemDiscount: 0, invoiceDiscount: 0, total: 225000, paid: 225000, outstanding: 0,
   };
 }
 

@@ -59,6 +59,7 @@ import { InvoiceActions } from "@/components/invoice-actions";
 import { BiometricSettings } from "@/components/biometric-login";
 import { UserGuide } from "@/components/user-guide";
 import { PrinterSettingsPanel } from "@/components/printer-settings";
+import { FreeIssueSettings } from "@/components/free-issue-settings";
 import { disableBiometric } from "@/lib/biometric";
 import { isNative } from "@/lib/native";
 import { ReportsPanel } from "@/components/reports-panel";
@@ -847,6 +848,7 @@ function Workspace() {
               />
               <FormPanel title="Business profile">
                 <SettingsForm data={settings.data} submit={submit} />
+                <FreeIssueSettings />
               </FormPanel>
               <FormPanel title="Invoice print settings">
                 <BillingSettings />

@@ -384,7 +384,7 @@ routes.get("/billing/print-settings", async (c) => {
   if (denied) return denied;
   const rows = (
     await c.env.DB.prepare(
-      "SELECT key,value FROM system_settings WHERE key IN('invoice_show_shop_price','invoice_show_customer_whatsapp','thermal_printer')",
+      "SELECT key,value FROM system_settings WHERE key IN('invoice_show_shop_price','invoice_show_customer_whatsapp','thermal_printer','free_issue_rules')",
     ).all<{ key: string; value: string }>()
   ).results;
   const map = Object.fromEntries(rows.map((x) => [x.key, x.value]));
@@ -394,10 +394,18 @@ routes.get("/billing/print-settings", async (c) => {
   } catch {
     thermal = null;
   }
+  // null = never configured → the app uses its built-in default (50g/100g/200g: 12 → 1, 24 → 3).
+  let freeIssueRules: unknown = null;
+  try {
+    freeIssueRules = map.free_issue_rules ? JSON.parse(map.free_issue_rules) : null;
+  } catch {
+    freeIssueRules = null;
+  }
   return c.json({
     showShopPrice: map.invoice_show_shop_price === "true",
     showCustomerWhatsapp: map.invoice_show_customer_whatsapp !== "false",
     thermal,
+    freeIssueRules,
   });
 });
 routes.patch("/billing/settings", async (c) => {
@@ -420,6 +428,17 @@ routes.patch("/billing/settings", async (c) => {
         })
         .refine((t) => t.printableWidthMm <= t.paperWidthMm, "Printable width cannot exceed paper width")
         .optional(),
+      // Buy-X-get-Y free issue offers applied while billing (e.g. 12 → 1 free, 24 → 3 free).
+      freeIssueRules: z
+        .array(
+          z.object({
+            variantId: z.string().min(1).max(64),
+            active: z.boolean(),
+            tiers: z.array(z.object({ buy: z.number().int().min(1).max(100000), free: z.number().int().min(1).max(100000) })).min(1).max(10),
+          }),
+        )
+        .max(300)
+        .optional(),
     }),
   );
   const stmts: any[] = [];
@@ -435,6 +454,13 @@ routes.patch("/billing/settings", async (c) => {
       c.env.DB.prepare(
         "INSERT INTO system_settings(key,value) VALUES('invoice_show_customer_whatsapp',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
       ).bind(String(d.showCustomerWhatsapp)),
+    );
+  }
+  if (d.freeIssueRules !== undefined) {
+    stmts.push(
+      c.env.DB.prepare(
+        "INSERT INTO system_settings(key,value) VALUES('free_issue_rules',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+      ).bind(JSON.stringify(d.freeIssueRules)),
     );
   }
   if (d.thermalPrinter !== undefined) {
