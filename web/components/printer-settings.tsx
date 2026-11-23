@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { Bluetooth, Printer, ReceiptText, RefreshCw, Save, Share2 } from 'lucide-react';
+import { Bluetooth, Minus, Plus, Printer, ReceiptText, RefreshCw, Save, Share2 } from 'lucide-react';
 import { InvoiceReceipt } from '@/components/invoice-document';
 import { isNative, type PrinterDevice } from '@/lib/native';
 import {
@@ -9,6 +9,32 @@ import {
 } from '@/lib/invoice/printer';
 
 type Preset = '58' | '80' | 'custom';
+
+/**
+ * Number box that lets you type freely (e.g. "1" on the way to "12") and only
+ * checks the range when you finish (leave the box / press Done), plus − / + buttons.
+ */
+function NumField({ label, value, min, max, step = 1, onCommit }: { label: string; value: number; min: number; max: number; step?: number; onCommit: (n: number) => void }) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => { setText(String(value)); }, [value]);
+  const commit = (raw: string) => {
+    const n = Number(raw.replace(',', '.'));
+    const v = Number.isFinite(n) && raw.trim() !== '' ? Math.min(max, Math.max(min, Math.round(n / step) * step)) : value;
+    setText(String(v)); if (v !== value) onCommit(v);
+  };
+  const bump = (d: number) => commit(String(Math.round((value + d) * 100) / 100));
+  return (
+    <label className="num-field">{label}
+      <span className="num-row">
+        <button type="button" className="secondary" aria-label={`Decrease ${label}`} onClick={() => bump(-step)} disabled={value <= min}><Minus size={16} /></button>
+        <input type="text" inputMode={step < 1 ? 'decimal' : 'numeric'} value={text} onChange={e => setText(e.target.value.replace(/[^0-9.,]/g, ''))}
+          onBlur={e => commit(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} aria-label={label} />
+        <button type="button" className="secondary" aria-label={`Increase ${label}`} onClick={() => bump(step)} disabled={value >= max}><Plus size={16} /></button>
+      </span>
+      <small>{min}–{max}</small>
+    </label>
+  );
+}
 const presetOf = (s: PrinterSettings): Preset => (s.paperWidthMm === 58 ? '58' : s.paperWidthMm === 80 ? '80' : 'custom');
 
 /**
@@ -90,13 +116,11 @@ export function PrinterSettingsPanel({ admin = false, businessName = '', onChang
               ))}
             </div>
             <div className="prn-fields">
-              {preset === 'custom' && (
-                <label>Paper width (mm)<input type="number" inputMode="numeric" min={40} max={120} value={s.paperWidthMm} onChange={e => update({ paperWidthMm: +e.target.value })} /></label>
-              )}
-              <label>Printable width (mm)<input type="number" inputMode="numeric" min={30} max={s.paperWidthMm} value={s.printableWidthMm} onChange={e => update({ printableWidthMm: +e.target.value })} /></label>
-              <label>Font size<input type="number" inputMode="numeric" min={8} max={18} value={s.fontSizePx} onChange={e => update({ fontSizePx: +e.target.value })} /></label>
-              <label>Side margin (mm)<input type="number" inputMode="decimal" min={0} max={10} step={0.5} value={s.marginMm} onChange={e => update({ marginMm: +e.target.value })} /></label>
-              <label>Copies<input type="number" inputMode="numeric" min={1} max={5} value={s.copies} onChange={e => update({ copies: +e.target.value })} /></label>
+              {preset === 'custom' && <NumField label="Paper width (mm)" value={s.paperWidthMm} min={40} max={120} onCommit={v => update({ paperWidthMm: v })} />}
+              <NumField label="Printable width (mm)" value={s.printableWidthMm} min={30} max={s.paperWidthMm} onCommit={v => update({ printableWidthMm: v })} />
+              <NumField label="Font size" value={s.fontSizePx} min={6} max={28} onCommit={v => update({ fontSizePx: v })} />
+              <NumField label="Side margin (mm)" value={s.marginMm} min={0} max={10} step={0.5} onCommit={v => update({ marginMm: v })} />
+              <NumField label="Copies" value={s.copies} min={1} max={5} onCommit={v => update({ copies: v })} />
               <label className="check-field"><input type="checkbox" checked={s.showLogo} onChange={e => update({ showLogo: e.target.checked })} /> Print logo</label>
             </div>
             <p className="muted">58 mm paper → printable 48 mm (384 dots). 80 mm → 72 mm (576 dots). If text is cut at the edges, lower the printable width or add margin.</p>

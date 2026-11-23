@@ -8,7 +8,7 @@ import type { InvoiceModel } from './model';
 export type ThermalLayout = {
   paperWidthMm: number;      // 58, 80 or custom
   printableWidthMm: number;  // printed area (58 mm paper ≈ 48 mm, 80 mm ≈ 72 mm)
-  fontSizePx: number;        // 8–18
+  fontSizePx: number;        // 6–28 on the phone (server default range 8–18)
   marginMm: number;          // 0–10, left/right inside the printable area
   showLogo: boolean;
   copies: number;            // 1–5
@@ -30,7 +30,7 @@ export function sanitizeLayout(raw: Partial<ThermalLayout> | null | undefined): 
   return {
     paperWidthMm: paper,
     printableWidthMm: clamp(r.printableWidthMm, 30, paper, autoPrintable),
-    fontSizePx: clamp(r.fontSizePx, 8, 18, LAYOUT_DEFAULTS.fontSizePx),
+    fontSizePx: clamp(r.fontSizePx, 6, 28, LAYOUT_DEFAULTS.fontSizePx),
     marginMm: clamp(r.marginMm, 0, 10, LAYOUT_DEFAULTS.marginMm),
     showLogo: typeof r.showLogo === 'boolean' ? r.showLogo : LAYOUT_DEFAULTS.showLogo,
     copies: Math.round(clamp(r.copies, 1, 5, 1)),
@@ -82,7 +82,9 @@ export async function savePrinter(s: PrinterSettings) {
 }
 /** Admin: make this layout the default for every phone and the web ERP. */
 export async function saveLayoutForAll(s: PrinterSettings) {
-  await api('/billing/settings', { method: 'PATCH', body: JSON.stringify({ thermalPrinter: sanitizeLayout(s) }) });
+  const l = sanitizeLayout(s);
+  // The shared server setting accepts font sizes 8–18; larger/smaller sizes stay on this phone only.
+  await api('/billing/settings', { method: 'PATCH', body: JSON.stringify({ thermalPrinter: { ...l, fontSizePx: Math.min(18, Math.max(8, l.fontSizePx)) } }) });
 }
 
 export async function listPairedPrinters(): Promise<PrinterDevice[]> {
