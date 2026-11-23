@@ -861,3 +861,25 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
   .print-root-thermal .receipt-copy:last-child { break-after: auto; page-break-after: auto; }
 }
 .print-root.measuring { display: block !important; position: absolute; left: -10000px; top: 0; visibility: hidden; }
+
+/* ---------- Reports ---------- */
+.report-filters { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr) auto; gap: 14px; align-items: end; }
+.report-export { min-height: 46px; }
+.report-help { display: flex; align-items: center; gap: 8px; margin: 14px 0 0; font-size: 13px; color: var(--brand-text-muted); }
+.report-help svg { flex: none; color: var(--brand-secondary); }
+.report-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-top: 20px; }
+.report-cards .stat-card { min-height: 104px; }
+.report-cards .stat-card strong { margin-top: 10px; }
+.report-table th { vertical-align: bottom; }
+.report-table th .si { display: block; font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; margin-top: 2px; }
+.report-table .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.report-table td.overdue { color: var(--danger-strong); font-weight: 700; }
+.report-table td.overdue small { font-weight: 600; }
+.report-table td.neg { color: var(--danger-strong); }
+.report-table tfoot td { font-weight: 800; background: var(--surface-raised); border-top: 2px solid var(--brand-primary); padding: 13px 12px; white-space: nowrap; }
+@media (max-width: 860px) {
+  .report-filters { grid-template-columns: 1fr 1fr; }
+  .report-filters label:first-child, .report-export { grid-column: 1 / -1; }
+  .report-cards { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .report-cards .stat-card strong { font-size: 17px; }
+}
