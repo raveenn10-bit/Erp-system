@@ -1,12 +1,13 @@
 "use client";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Bluetooth, Download, MessageCircle, Printer, ReceiptText, RefreshCw, Settings2, Share2, X } from "lucide-react";
+import { Download, MessageCircle, Printer, ReceiptText, RefreshCw, Settings2, Share2, X } from "lucide-react";
 import { api, formatWhatsApp, normalizeWhatsApp } from "@/lib/api";
-import { isNative, openExternal, printPdf, saveFile, shareFile, shareToWhatsApp, type PrinterDevice } from "@/lib/native";
+import { openExternal, printPdf, saveFile, shareFile, shareToWhatsApp } from "@/lib/native";
 import { pdfFileName, toInvoiceModel, whatsappMessage, type InvoiceDetail } from "@/lib/invoice/model";
 import { InvoiceA4, A4_PX } from "@/components/invoice-document";
-import { DEFAULT_PRINTER, listPairedPrinters, loadPrinter, paperSpec, printReceipt, savePrinter, shareReceiptToPrinterApp, testReceiptModel, type PrinterSettings } from "@/lib/invoice/printer";
+import { DEFAULT_PRINTER, loadPrinter, printReceipt, shareReceiptToPrinterApp, type PrinterSettings } from "@/lib/invoice/printer";
+import { PrinterSettingsPanel } from "@/components/printer-settings";
 
 /** Scales the fixed-size A4 pages down to the available width (no overflow on phones). */
 function ScaledPreview({ children }: { children: React.ReactNode }) {
@@ -42,7 +43,6 @@ export function InvoiceActions({ id, close }: { id: string; close: () => void })
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [printer, setPrinter] = useState<PrinterSettings>(DEFAULT_PRINTER);
   const [showPrinter, setShowPrinter] = useState(false);
-  const [devices, setDevices] = useState<PrinterDevice[] | null>(null);
   const pdfCache = useRef<{ key: string; blob: Blob } | null>(null);
 
   useEffect(() => { loadPrinter().then(setPrinter); }, []);
@@ -100,12 +100,6 @@ export function InvoiceActions({ id, close }: { id: string; close: () => void })
     openExternal(`https://wa.me/${phone}?text=${encodeURIComponent(whatsappMessage(model).replace("is attached", "is ready"))}`);
   }
 
-  async function choosePrinterList() {
-    await run("devices", async () => { setDevices(await listPairedPrinters()); });
-  }
-  async function updatePrinter(next: PrinterSettings) { setPrinter(next); await savePrinter(next); }
-
-  const native = isNative();
   return (
     <div className="dialog-backdrop" onMouseDown={close}>
       <div className="dialog-card document-sheet invoice-sheet" role="dialog" aria-modal="true" aria-label="Invoice" onMouseDown={(e) => e.stopPropagation()}>
@@ -120,52 +114,14 @@ export function InvoiceActions({ id, close }: { id: string; close: () => void })
               <button className="primary wa" disabled={!!busy} onClick={sendPdf}><MessageCircle size={16} />{busy === "share" ? "Preparing PDF…" : "Send PDF on WhatsApp · WhatsApp යවන්න"}</button>
               <button className="secondary" disabled={!!busy} onClick={() => run("save", async () => saveFile(await pdf(), pdfFileName(model, "A4")))}><Download size={16} />{busy === "save" ? "Saving…" : "Download PDF"}</button>
               <button className="secondary" disabled={!!busy} onClick={() => run("print", async () => { await printPdf(await pdf(), pdfFileName(model, "A4"), true); })}><Printer size={16} />{busy === "print" ? "Preparing…" : "Print A4"}</button>
-              <button className="secondary" disabled={!!busy} onClick={() => run("receipt", () => printReceipt(model, printer))}><ReceiptText size={16} />{busy === "receipt" ? "Printing…" : `Print receipt ${paperSpec(printer).mm}mm`}</button>
+              <button className="secondary" disabled={!!busy} onClick={() => run("receipt", () => printReceipt(model, printer))}><ReceiptText size={16} />{busy === "receipt" ? "Printing…" : `Print receipt ${printer.paperWidthMm}mm`}</button>
               <button className="secondary" disabled={!!busy} onClick={() => run("rawbt", () => shareReceiptToPrinterApp(model, printer))}><Printer size={16} />{busy === "rawbt" ? "Preparing…" : "Receipt image → other app"}</button>
               <button className="secondary" disabled={!!busy} onClick={() => run("other", async () => { await shareFile(await pdf(), pdfFileName(model, "A4"), { title: `Invoice ${model.number}` }); })}><Share2 size={16} />Share…</button>
               <button className="secondary icon-only" aria-label="Printer settings" aria-expanded={showPrinter} onClick={() => setShowPrinter(v => !v)}><Settings2 size={16} /></button>
             </div>
-            {msg && <p className={`inv-msg ${msg.ok ? "ok" : "bad"}`} role="status">{msg.text}</p>}
+            {msg && <p className={`ninv-msg ${msg.ok ? "ok" : "bad"}`} role="status">{msg.text}</p>}
 
-            {showPrinter && (
-              <section className="printer-panel" aria-label="Thermal printer settings">
-                <h3><Bluetooth size={16} /> Receipt printer</h3>
-                <div className="seg-row">
-                  {(["rawbt", "bluetooth", "system"] as const).map(mode => (
-                    <button key={mode} className={printer.mode === mode ? "primary" : "secondary"} onClick={() => updatePrinter({ ...printer, mode })} disabled={mode !== "system" && !native}>
-                      {mode === "rawbt" ? "RawBT app (recommended)" : mode === "bluetooth" ? "Bluetooth (direct)" : "Android print service"}
-                    </button>
-                  ))}
-                </div>
-                <div className="seg-row">
-                  {(["58", "80", "custom"] as const).map(paper => (
-                    <button key={paper} className={printer.paper === paper ? "primary" : "secondary"} onClick={() => updatePrinter({ ...printer, paper })}>{paper === "custom" ? "Custom" : `${paper} mm`}</button>
-                  ))}
-                </div>
-                {printer.paper === "custom" && (
-                  <div className="seg-row">
-                    <label>Paper width (mm)<input type="number" inputMode="numeric" min={40} max={112} value={printer.customMm} onChange={e => updatePrinter({ ...printer, customMm: Number(e.target.value) })} /></label>
-                    <label>Printable dots<input type="number" inputMode="numeric" min={200} max={832} step={8} value={printer.customDots} onChange={e => updatePrinter({ ...printer, customDots: Number(e.target.value) })} /></label>
-                  </div>
-                )}
-                {printer.mode === "bluetooth" && (
-                  <>
-                    <p className="muted">Pair the printer first in Android Settings → Bluetooth. Status: <b>{printer.device ? `Selected: ${printer.device.name}` : "No printer selected"}</b></p>
-                    <div className="seg-row">
-                      <button className="secondary" disabled={!!busy} onClick={choosePrinterList}><RefreshCw size={14} />{busy === "devices" ? "Loading…" : "Find paired printers"}</button>
-                    </div>
-                    {devices && (devices.length ? (
-                      <ul className="device-list">
-                        {devices.map(d => (
-                          <li key={d.address}><button className={printer.device?.address === d.address ? "primary" : "secondary"} onClick={() => updatePrinter({ ...printer, device: d })}>{d.name}<small>{d.address}</small></button></li>
-                        ))}
-                      </ul>
-                    ) : <p className="muted">No paired devices found.</p>)}
-                  </>
-                )}
-                <button className="secondary" disabled={!!busy} onClick={() => run("test", () => printReceipt(testReceiptModel(), printer))}><Printer size={14} />{busy === "test" ? "Printing…" : "Test print"}</button>
-              </section>
-            )}
+            {showPrinter && <PrinterSettingsPanel embedded businessName={model.business.name} onChange={setPrinter} />}
 
             <div className="ninv-wa">
               <MessageCircle size={18} />

@@ -58,6 +58,7 @@ import { api, idempotency, money } from "@/lib/api";
 import { InvoiceActions } from "@/components/invoice-actions";
 import { BiometricSettings } from "@/components/biometric-login";
 import { UserGuide } from "@/components/user-guide";
+import { PrinterSettingsPanel } from "@/components/printer-settings";
 import { disableBiometric } from "@/lib/biometric";
 import { isNative } from "@/lib/native";
 import { ReportsPanel } from "@/components/reports-panel";
@@ -853,6 +854,7 @@ function Workspace() {
               <CreditAlertSettingsPanel />
               <div style={{ marginTop: 20 }}>
                 <BiometricSettings />
+              <PrinterSettingsPanel admin={!!user.admin} businessName={settings.data?.name || ""} />
                 <ChangePasswordPanel />
               </div>
             </>
@@ -878,6 +880,7 @@ function Workspace() {
               </div>
               <div style={{ marginTop: 20 }}>
                 <BiometricSettings />
+              <PrinterSettingsPanel admin={!!user.admin} businessName={settings.data?.name || ""} />
                 <ChangePasswordPanel />
               </div>
             </>
