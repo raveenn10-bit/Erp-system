@@ -1187,3 +1187,8 @@ select[multiple] option { padding: 8px; border-radius: 7px; }
 .prn-preview { display: grid; justify-items: center; align-content: start; gap: 6px; background: #eef3f1; border-radius: 12px; padding: 14px 8px; }
 .prn-paper { background: #fff; box-shadow: 0 6px 18px rgba(0,0,0,.12); padding: 8px; overflow: hidden; border-radius: 2px; }
 .prn-preview small { color: #647773; font-size: 11.5px; }
+.num-field { display: grid; gap: 4px; font-size: 12.5px; font-weight: 600; }
+.num-row { display: grid; grid-template-columns: 40px 1fr 40px; gap: 6px; align-items: center; }
+.num-row button { padding: 0; min-height: 40px !important; display: grid; place-items: center; }
+.num-row input { text-align: center; font-size: 16px; font-weight: 700; min-width: 0; }
+.num-field small { color: #8a9a97; font-weight: 500; font-size: 11px; }
