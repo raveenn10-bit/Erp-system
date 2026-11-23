@@ -199,7 +199,7 @@ export function CustomerAccountModal({
   }
 
   return (
-    <div style={{
+    <div data-overlay style={{
       position: "fixed", inset: 0, zIndex: 1200,
       background: "rgba(10,30,30,0.55)", display: "flex", alignItems: "center", justifyContent: "center",
       padding: 16,

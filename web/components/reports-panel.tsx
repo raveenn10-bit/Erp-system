@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
+import { savePdfDoc } from "@/lib/native";
 import { useQuery } from "@tanstack/react-query";
 import { Download, FileBarChart, FileDown } from "lucide-react";
 import { api } from "@/lib/api";
@@ -238,7 +239,7 @@ export function ReportsPanel() {
     const heading=()=>{doc.setFont("helvetica","bold");doc.setFontSize(15);doc.text(def.label,margin,12);doc.setFont("helvetica","normal");doc.setFontSize(8);doc.text(`${from} to ${to} · LKR`,margin,17);doc.setFillColor(12,80,81);doc.rect(margin,21,pageWidth-margin*2,8,"F");doc.setTextColor(255,255,255);doc.setFont("helvetica","bold");def.cols.forEach((c,i)=>doc.text(c.en.slice(0,24),margin+i*colWidth+1,26));doc.setTextColor(20,44,42);};
     heading();let y=34;doc.setFont("helvetica","normal");doc.setFontSize(7);
     rows.forEach((row,index)=>{if(y>194){doc.addPage();heading();y=34}if(index%2===0){doc.setFillColor(247,251,249);doc.rect(margin,y-4,pageWidth-margin*2,7,"F")}def.cols.forEach((c,i)=>doc.text(display(c,row[c.key]).slice(0,28),margin+i*colWidth+1,y));y+=7});
-    doc.save(`${def.label.replace(/[^A-Za-z0-9]+/g,"-")}-${from}-to-${to}.pdf`);
+    await savePdfDoc(doc,`${def.label.replace(/[^A-Za-z0-9]+/g,"-")}-${from}-to-${to}.pdf`);
   }
 
   const today0 = today();

@@ -2,6 +2,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { biometricStatus, type BiometricStatus } from '@/lib/biometric';
+import { BiometricEnrollSheet, BiometricLoginPanel, shouldOfferBiometric } from '@/components/biometric-login';
 import { ArrowRight, ShieldCheck, ChartNoAxesCombined, KeyRound, Sparkles, Delete, Check } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 
@@ -13,6 +15,17 @@ export default function Login() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const router = useRouter();
+  const [bio, setBio] = useState<BiometricStatus | null>(null);
+  const [showBio, setShowBio] = useState(false);
+  const [offer, setOffer] = useState<{ id: string; name: string } | null>(null);
+  useEffect(() => {
+    biometricStatus().then((st) => { setBio(st); setShowBio(st.enabled); });
+  }, []);
+  // After PIN/password login: offer biometric enrolment once, then open the dashboard.
+  async function afterLogin() {
+    const user = await shouldOfferBiometric();
+    if (user) setOffer(user); else router.push('/dashboard');
+  }
   const reduced = useReducedMotion();
   const pinInputRefs = [
     useRef<HTMLInputElement>(null),
@@ -38,7 +51,7 @@ export default function Login() {
         method: 'POST',
         body: JSON.stringify({ username: username.trim(), password }),
       });
-      router.push('/dashboard');
+      await afterLogin();
     } catch (err) {
       setError((err as Error).message || 'Invalid username or password.');
     } finally {
@@ -62,7 +75,7 @@ export default function Login() {
           passcode: code,
         }),
       });
-      router.push('/dashboard');
+      await afterLogin();
     } catch (err) {
       setError((err as Error).message || 'Invalid passcode.');
       setPasscode(['', '', '', '']);
@@ -175,6 +188,14 @@ export default function Login() {
             </span>
           </p>
 
+          {showBio && bio ? (
+            <BiometricLoginPanel status={bio} onSuccess={() => router.push('/dashboard')} onUseFallback={() => setShowBio(false)} />
+          ) : (<>
+          {bio?.enabled && (
+            <button type="button" className="bio-switch" onClick={() => setShowBio(true)}>
+              Sign in with fingerprint or face · <span lang="si">ජෛවමිතික</span>
+            </button>
+          )}
           {/* Mode Switch Tabs */}
           <div
             style={{
@@ -249,7 +270,7 @@ export default function Login() {
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder=""
+                  placeholder="Your username"
                   style={{
                     width: '100%',
                     padding: '10px 14px',
@@ -421,7 +442,7 @@ export default function Login() {
                   autoComplete="username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder=""
+                  placeholder="Your username or email"
                   required
                 />
               </label>
@@ -432,7 +453,7 @@ export default function Login() {
                   autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder=""
+                  placeholder="Your password"
                   required
                 />
               </label>
@@ -458,6 +479,8 @@ export default function Login() {
             </form>
           )}
 
+          </>)}
+          {offer && <BiometricEnrollSheet user={offer} onDone={() => { setOffer(null); router.push('/dashboard'); }} />}
           <small style={{ marginTop: 24 }}>Developed by Harsh Apex Digital Solutions</small>
         </motion.div>
       </section>
