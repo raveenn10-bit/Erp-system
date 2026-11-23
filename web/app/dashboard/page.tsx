@@ -825,58 +825,46 @@ function Workspace() {
         </motion.div>
       </main>
       <nav className="bottom-nav" aria-label="Quick navigation">
-        {bottomItems.map(({ name, label, icon: Icon, fab }) =>
-          fab ? (
-            <div className="bn-center" key={name}>
+        {[...bottomItems, { name: "__more", label: "More", icon: MoreHorizontal, fab: false }].map(
+          ({ name, label, icon: Icon, fab }) => {
+            const isMore = name === "__more";
+            const active = isMore ? !inBottom : tab === name;
+            return (
               <button
-                className={`bn-fab ${tab === name ? "active" : ""}`}
-                aria-label="Quick billing (POS) · ඉක්මන් බිල්පත"
-                aria-current={tab === name ? "page" : undefined}
-                onClick={openBilling}
+                key={name}
+                className={`bn-item ${fab ? "bn-fab-item" : ""} ${active ? "active" : ""}`}
+                aria-current={active && !isMore ? "page" : undefined}
+                aria-label={
+                  fab
+                    ? "Quick billing (POS) · ඉක්මන් බිල්පත"
+                    : isMore
+                      ? "More menu · තවත්"
+                      : `${name} · ${siLabel(name)}`
+                }
+                {...(isMore ? { "aria-controls": "app-drawer", "aria-expanded": open } : {})}
+                onClick={fab ? openBilling : isMore ? () => setOpen(true) : () => changeTab(name)}
               >
-                <Plus size={26} strokeWidth={2.4} />
+                {fab ? (
+                  <span className="bn-fab" aria-hidden="true">
+                    <Plus size={26} strokeWidth={2.4} />
+                  </span>
+                ) : (
+                  <span className="bn-icon" aria-hidden="true">
+                    {active && (
+                      <motion.span
+                        layoutId={reduced ? undefined : "bn-active"}
+                        className="bn-pill"
+                        transition={{ type: "spring", stiffness: 480, damping: 34 }}
+                      />
+                    )}
+                    <Icon size={20} />
+                  </span>
+                )}
+                <span className="bn-label">{label}</span>
               </button>
-              <span className="bn-fab-label" aria-hidden="true">
-                {label}
-              </span>
-            </div>
-          ) : (
-            <button
-              key={name}
-              className={`bn-item ${tab === name ? "active" : ""}`}
-              aria-current={tab === name ? "page" : undefined}
-              aria-label={`${name} · ${siLabel(name)}`}
-              onClick={() => changeTab(name)}
-            >
-              {tab === name && (
-                <motion.span
-                  layoutId={reduced ? undefined : "bn-active"}
-                  className="bn-pill"
-                  transition={{ type: "spring", stiffness: 480, damping: 34 }}
-                />
-              )}
-              <Icon size={20} />
-              <span>{label}</span>
-            </button>
-          ),
+            );
+          },
         )}
-        <button
-          className={`bn-item ${!inBottom ? "active" : ""}`}
-          aria-label="More menu · තවත්"
-          aria-controls="app-drawer"
-          aria-expanded={open}
-          onClick={() => setOpen(true)}
-        >
-          {!inBottom && (
-            <motion.span
-              layoutId={reduced ? undefined : "bn-active"}
-              className="bn-pill"
-              transition={{ type: "spring", stiffness: 480, damping: 34 }}
-            />
-          )}
-          <MoreHorizontal size={20} />
-          <span>More</span>
-        </button>
       </nav>
     </div>
   );
