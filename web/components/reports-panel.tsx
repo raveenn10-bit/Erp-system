@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Download, FileBarChart } from "lucide-react";
+import { Download, FileBarChart, FileDown } from "lucide-react";
 import { api } from "@/lib/api";
 import { lkr } from "@/lib/invoice-model";
 
@@ -128,6 +128,29 @@ const REPORTS: Record<string, ReportDef> = {
       { en: "Movements", si: "චලනයන්", value: (r) => String(r.length) },
     ],
   },
+  "warehouse-balances": {
+    label: "Distribution stock balances", si: "බෙදාහැරීම් තොග ශේෂ", help: "Available physical stock by warehouse, sales representative and vehicle location.",
+    cols: [
+      {key:"name",en:"Stock location",si:"තොග ස්ථානය",fmt:"text"},{key:"location_type",en:"Type",si:"වර්ගය",fmt:"title"},
+      {key:"product",en:"Product",si:"නිෂ්පාදනය",fmt:"text"},{key:"label",en:"Pack",si:"ඇසුරුම",fmt:"text"},
+      {key:"quantity",en:"Physical",si:"භෞතික තොගය",fmt:"count",total:true},{key:"reserved_quantity",en:"Reserved",si:"වෙන් කළ",fmt:"count",total:true},
+      {key:"allocated_quantity",en:"Allocated",si:"පවරා ඇති",fmt:"count",total:true},{key:"damaged_quantity",en:"Damaged",si:"හානි වූ",fmt:"count",total:true},
+    ],cards:[
+      {en:"Physical units",si:"භෞතික ඒකක",value:r=>sum(r,"quantity").toLocaleString("en-LK")},
+      {en:"Vehicle units",si:"වාහන තොග",value:r=>r.filter(x=>x.location_type==="vehicle").reduce((t,x)=>t+n(x.quantity),0).toLocaleString("en-LK")},
+      {en:"Damaged",si:"හානි වූ",value:r=>sum(r,"damaged_quantity").toLocaleString("en-LK"),tone:"alert"},
+    ]
+  },
+  "route-sales": {
+    label:"Route-wise sales",si:"මාර්ග අනුව විකුණුම්",help:"Invoices and revenue posted against each daily route. Internal transfers are excluded.",
+    cols:[{key:"route_date",en:"Date",si:"දිනය",fmt:"date"},{key:"route_name",en:"Route",si:"මාර්ගය",fmt:"text"},{key:"registration_number",en:"Vehicle",si:"වාහනය",fmt:"text"},{key:"sales_rep",en:"Sales rep",si:"නියෝජිතයා",fmt:"text"},{key:"invoices",en:"Invoices",si:"බිල්පත්",fmt:"count",total:true},{key:"revenue_cents",en:"Sales",si:"විකුණුම්",fmt:"money",total:true}],
+    cards:[{en:"Route sales",si:"මාර්ග විකුණුම්",value:r=>lkr(sum(r,"revenue_cents"))},{en:"Invoices",si:"බිල්පත්",value:r=>String(sum(r,"invoices"))},{en:"Routes",si:"මාර්ග",value:r=>String(r.length)}]
+  },
+  "reconciliation-differences": {
+    label:"Reconciliation differences",si:"තොග වෙනස්කම්",help:"Expected versus physically counted vehicle stock. Every difference retains its submitted reason and approval status.",
+    cols:[{key:"route_date",en:"Date",si:"දිනය",fmt:"date"},{key:"route_name",en:"Route",si:"මාර්ගය",fmt:"text"},{key:"registration_number",en:"Vehicle",si:"වාහනය",fmt:"text"},{key:"reference_number",en:"Reference",si:"යොමු අංකය",fmt:"text"},{key:"product",en:"Product",si:"නිෂ්පාදනය",fmt:"text"},{key:"label",en:"Pack",si:"ඇසුරුම",fmt:"text"},{key:"expected_quantity",en:"Expected",si:"අපේක්ෂිත",fmt:"count",total:true},{key:"counted_quantity",en:"Counted",si:"ගණන් කළ",fmt:"count",total:true},{key:"variance_quantity",en:"Variance",si:"වෙනස",fmt:"signed",total:true},{key:"variance_reason",en:"Reason",si:"හේතුව",fmt:"text"},{key:"status",en:"Status",si:"තත්ත්වය",fmt:"title"}],
+    cards:[{en:"Variance lines",si:"වෙනස්කම්",value:r=>String(r.length),tone:"alert"},{en:"Net variance",si:"ශුද්ධ වෙනස",value:r=>String(sum(r,"variance_quantity")),tone:"danger"}]
+  },
 };
 
 function parseDate(v: string) {
@@ -188,7 +211,7 @@ export function ReportsPanel() {
   const def = REPORTS[kind];
   const report = useQuery({
     queryKey: ["report", kind, from, to],
-    queryFn: () => api<Row[]>(`/reports/${kind}?from=${from}&to=${to}`),
+    queryFn: () => api<Row[]>(`${["warehouse-balances","route-sales","reconciliation-differences"].includes(kind)?"/distribution/reports":"/reports"}/${kind}?from=${from}&to=${to}`),
   });
   const rows = useMemo(() => (report.data || []).map((r) => (def.derive ? def.derive(r) : r)), [report.data, def]);
 
@@ -208,6 +231,14 @@ export function ReportsPanel() {
     a.download = `${def.label.replace(/[^A-Za-z0-9]+/g, "-")}-${from}-to-${to}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+  async function pdf(){
+    if(!rows.length)return;
+    const {jsPDF}=await import("jspdf"),doc=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"}),pageWidth=277,margin=10,colWidth=(pageWidth-margin*2)/def.cols.length;
+    const heading=()=>{doc.setFont("helvetica","bold");doc.setFontSize(15);doc.text(def.label,margin,12);doc.setFont("helvetica","normal");doc.setFontSize(8);doc.text(`${from} to ${to} · LKR`,margin,17);doc.setFillColor(12,80,81);doc.rect(margin,21,pageWidth-margin*2,8,"F");doc.setTextColor(255,255,255);doc.setFont("helvetica","bold");def.cols.forEach((c,i)=>doc.text(c.en.slice(0,24),margin+i*colWidth+1,26));doc.setTextColor(20,44,42);};
+    heading();let y=34;doc.setFont("helvetica","normal");doc.setFontSize(7);
+    rows.forEach((row,index)=>{if(y>194){doc.addPage();heading();y=34}if(index%2===0){doc.setFillColor(247,251,249);doc.rect(margin,y-4,pageWidth-margin*2,7,"F")}def.cols.forEach((c,i)=>doc.text(display(c,row[c.key]).slice(0,28),margin+i*colWidth+1,y));y+=7});
+    doc.save(`${def.label.replace(/[^A-Za-z0-9]+/g,"-")}-${from}-to-${to}.pdf`);
   }
 
   const today0 = today();
@@ -247,9 +278,10 @@ export function ReportsPanel() {
             </span>
             <input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} />
           </label>
-          <button className="secondary report-export" disabled={!rows.length} onClick={csv}>
-            <Download size={17} /> Export CSV
-          </button>
+          <div className="report-export-group">
+            <button className="secondary report-export" disabled={!rows.length} onClick={csv}><Download size={17}/>CSV</button>
+            <button className="secondary report-export" disabled={!rows.length} onClick={pdf}><FileDown size={17}/>PDF</button>
+          </div>
         </div>
         <p className="report-help">
           <FileBarChart size={15} /> {def.help}

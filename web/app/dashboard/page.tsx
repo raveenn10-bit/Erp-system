@@ -51,6 +51,7 @@ import {
   Wallet,
   MoreHorizontal,
   TrendingUp,
+  Truck,
 } from "lucide-react";
 import { api, idempotency, money } from "@/lib/api";
 import { InvoiceActions } from "@/components/invoice-actions";
@@ -74,6 +75,7 @@ import {
   ConsignmentPanel,
   FreeIssuePanel,
 } from "@/components/distribution-panels";
+import { LogisticsPanel } from "@/components/logistics-panel";
 type User = { id: string; name: string; admin: number; role_id: string };
 type Summary = {
   totalSalesCents: number;
@@ -124,11 +126,17 @@ type Stock = {
   label: string;
   warehouse: string;
   quantity: number;
+  available_quantity?: number;
+  reserved_quantity?: number;
+  allocated_quantity?: number;
+  damaged_quantity?: number;
+  location_type?: string;
 };
 const menu = [
   { name: "Overview", si: "දළ විශ්ලේෂණය", icon: LayoutDashboard },
   { name: "Products", si: "නිෂ්පාදන", icon: Box },
   { name: "Inventory", si: "තොග", icon: Warehouse },
+  { name: "Distribution", si: "බෙදාහැරීම", icon: Truck },
   { name: "Customers", si: "ගනුදෙනුකරුවන්", icon: Building2 },
   { name: "Invoices", si: "බිල්පත් / POS", icon: FileText },
   { name: "Free Issues", si: "නොමිලේ නිකුත් කිරීම්", icon: Gift },
@@ -280,7 +288,10 @@ function Workspace() {
     );
   if (!user) return null;
   const visibleMenu = menu.filter(
-    (i) => user.admin || !["Team", "Settings", "Reports", "Expenses"].includes(i.name),
+    (i) => user.admin || (
+      !["Team", "Settings", "Reports", "Expenses"].includes(i.name) &&
+      (i.name !== "Distribution" || user.role_id === "sales_rep")
+    ),
   );
   const roleLabel = user.admin ? "Admin" : "Sales Representative";
   const bottomItems = [
@@ -555,7 +566,10 @@ function Workspace() {
                         <th>Product</th>
                         <th>Variant</th>
                         <th>Warehouse</th>
-                        <th>Quantity</th>
+                        <th>Available</th>
+                        <th>Reserved</th>
+                        <th>Allocated</th>
+                        <th>Damaged</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -564,7 +578,10 @@ function Workspace() {
                           <td>{s.name}</td>
                           <td>{s.label}</td>
                           <td>{s.warehouse}</td>
-                          <td>{s.quantity}</td>
+                          <td><b>{s.available_quantity ?? s.quantity}</b></td>
+                          <td>{s.reserved_quantity || 0}</td>
+                          <td>{s.allocated_quantity || 0}</td>
+                          <td>{s.damaged_quantity || 0}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -589,6 +606,21 @@ function Workspace() {
                   </div>
                 </div>
               )}
+            </>
+          )}
+          {tab === "Distribution" && (
+            <>
+              <Lead
+                title="Distribution control"
+                subtitle="Warehouse, representative and vehicle stock through daily route reconciliation."
+              />
+              <LogisticsPanel
+                isAdmin={!!user.admin}
+                products={products.data || []}
+                stocks={stocks.data || []}
+                staff={staff.data || []}
+                customers={customers.data || []}
+              />
             </>
           )}
           {tab === "Invoices" && (

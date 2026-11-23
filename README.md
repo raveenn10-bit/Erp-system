@@ -7,6 +7,7 @@ Cloudflare D1 and a Hono Workers API, with a mobile responsive Next.js 16 static
 - One-time admin setup guarded by a Worker secret; PBKDF2 password hashes; HTTP-only session cookies; account deactivation revokes sessions; admin password reset and self-service change password.
 - Server-enforced roles and per-user permission overrides, customer ownership checks, and warehouse ownership checks for Sales Representatives.
 - Product variants, customer registry, stock adjustments and transfers, immutable posted invoice items, stock deduction, invoice cancellation before any payment, initial collections, partial payments and credit limit checks.
+- Distribution logistics with main warehouse, sales-representative and vehicle stock locations; vehicle registry; daily route planning; draft/confirmed vehicle loading; traceable internal transfers; route invoicing, free issues and consignments; physical closing counts and Admin-approved reconciliation.
 - Admin and Sales Representative dashboards with live D1 data, empty states, responsive navigation and reduced-motion support.
 - 14-day-before-due dashboard reminder records via daily Cloudflare Cron Trigger; idempotent reminder index.
 - Gross profit, invoiced and outstanding report API, operational CSV exports, browser PDF invoice download and WhatsApp click-to-chat invoice summaries. Unit tests for integer financial calculations and credit dates.
@@ -19,6 +20,20 @@ Cloudflare D1 and a Hono Workers API, with a mobile responsive Next.js 16 static
 4. Run `npm run typecheck && npm test && npm run build`.
 5. Run the combined frontend/API locally with `npm run preview` and deploy it with `npm run deploy`.
 6. For one-time setup, POST `/api/setup` with `X-Setup-Token` and JSON `{ "name":"Admin", "email":"admin@example.lk", "password":"a-strong-unique-password" }` and a same-origin `Origin` header. The endpoint rejects subsequent setup once any account exists.
+
+## Distribution migration safety
+
+`worker/migrations/0009_distribution_logistics.sql` is additive. It does not rewrite historical invoices, payments, balances, or stock movements. Legacy warehouse and ledger table shapes are preserved; new route and audit relationships live in companion tables so existing inserts and Workers API behavior remain compatible.
+
+Before production approval:
+
+1. Export the production D1 database to a restricted backup location.
+2. Apply all migrations to a separate development or staging D1 database.
+3. Run `npm run typecheck && npm test && npm run build`.
+4. Exercise loading, route sales, returns and reconciliation with isolated fixtures.
+5. Review `0009_distribution_logistics.sql`; only then apply it remotely and deploy the matching Worker version.
+
+The PR intentionally does not run a remote migration, deploy, or merge.
 
 ### Cloudflare Workers Builds
 
