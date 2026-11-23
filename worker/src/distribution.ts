@@ -28,6 +28,7 @@ const invoiceLine = z.object({
 const billingInput = z.object({
   customerId: z.string().min(1),
   warehouseId: z.string().min(1),
+  routeId: z.string().min(1).optional(),
   idempotencyKey: key,
   invoiceDate: z.string().date(),
   items: z.array(invoiceLine).min(1),
@@ -85,6 +86,25 @@ async function checkScope(
   return null;
 }
 
+async function validateRouteSource(
+  db: D1Database,
+  p: Principal,
+  routeId: string | undefined,
+  warehouseId: string,
+  customerId: string,
+) {
+  if (!routeId) return;
+  const route = await db.prepare(
+    `SELECT r.sales_rep_id,r.status,v.stock_warehouse_id,
+      EXISTS(SELECT 1 FROM daily_route_customers rc WHERE rc.route_id=r.id AND rc.customer_id=?) customer_on_route
+     FROM daily_routes r JOIN vehicles v ON v.id=r.vehicle_id WHERE r.id=?`,
+  ).bind(customerId,routeId).first<any>();
+  if(!route || route.status!=="In Progress") throw new Error("An in-progress route is required");
+  if(!p.admin && route.sales_rep_id!==p.id) throw new Error("Route is not assigned to this sales representative");
+  if(!route.customer_on_route) throw new Error("Shop is not assigned to the selected route");
+  if(route.stock_warehouse_id!==warehouseId) throw new Error("Use the assigned vehicle stock location");
+}
+
 type VariantRow = {
   id: string;
   retail_cents: number;
@@ -135,6 +155,25 @@ async function postInvoice(
   if (existing) return { existing };
   if (new Set(input.items.map((x) => x.variantId)).size !== input.items.length)
     throw new Error("Duplicate product variants are not allowed");
+  let stockWarehouseId = input.warehouseId;
+  if (input.routeId) {
+    const route = await db.prepare(
+      `SELECT r.id,r.sales_rep_id,r.status,v.stock_warehouse_id,
+        EXISTS(SELECT 1 FROM daily_route_customers rc WHERE rc.route_id=r.id AND rc.customer_id=?) AS customer_on_route
+       FROM daily_routes r JOIN vehicles v ON v.id=r.vehicle_id WHERE r.id=?`,
+    ).bind(input.customerId, input.routeId).first<{
+      id:string;sales_rep_id:string;status:string;stock_warehouse_id:string;customer_on_route:number
+    }>();
+    if (!route || route.status !== "In Progress")
+      throw new Error("An in-progress route is required for route sales");
+    if (!p.admin && route.sales_rep_id !== p.id)
+      throw new Error("Route is not assigned to this sales representative");
+    if (!route.customer_on_route)
+      throw new Error("Shop is not assigned to the selected route");
+    if (input.warehouseId !== route.stock_warehouse_id)
+      throw new Error("Route invoice must use the assigned vehicle stock location");
+    stockWarehouseId = route.stock_warehouse_id;
+  }
   const customer = await db
     .prepare(
       "SELECT id,credit_days,credit_limit_cents,whatsapp,phone FROM customers WHERE id=? AND active=1",
@@ -142,7 +181,7 @@ async function postInvoice(
     .bind(input.customerId)
     .first<{ id: string; credit_days: number; credit_limit_cents: number; whatsapp: string; phone: string }>();
   if (!customer) throw new Error("Customer unavailable");
-  const scope = await checkScope(c, p, input.customerId, input.warehouseId);
+  const scope = await checkScope(c, p, input.customerId, stockWarehouseId);
   if (scope) return { response: scope };
   const rows = await variants(
     db,
@@ -196,7 +235,7 @@ async function postInvoice(
         number,
         input.customerId,
         p.id,
-        input.warehouseId,
+        stockWarehouseId,
         totals.totalCents,
         input.amountPaidCents,
         "posted",
@@ -217,6 +256,7 @@ async function postInvoice(
         shareToken,
       ),
   ];
+  if(input.routeId) statements.push(db.prepare("INSERT INTO distribution_entity_routes(entity_type,entity_id,route_id) VALUES('invoice',?,?)").bind(id,input.routeId));
   for (const item of calculated) {
     const itemDiscount = invoiceTotals([
       {
@@ -244,15 +284,16 @@ async function postInvoice(
         ),
     );
     if (!skipStock) {
+      const movementId=uuid();
       statements.push(
         db
           .prepare(
             "INSERT INTO stock_movements(id,variant_id,from_warehouse,to_warehouse,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?,?)",
           )
           .bind(
-            uuid(),
+            movementId,
             item.variantId,
-            input.warehouseId,
+            stockWarehouseId,
             null,
             item.quantity,
             "sale",
@@ -260,12 +301,13 @@ async function postInvoice(
             created,
           ),
       );
+      if(input.routeId) statements.push(db.prepare("INSERT INTO stock_movement_metadata(movement_id,transaction_reference,actor_id,route_id,transfer_id) VALUES(?,?,?,?,NULL)").bind(movementId,number,p.id,input.routeId));
       statements.push(
         db
           .prepare(
             "UPDATE stock_balances SET quantity=quantity-? WHERE warehouse_id=? AND variant_id=?",
           )
-          .bind(item.quantity, input.warehouseId, item.variantId),
+          .bind(item.quantity, stockWarehouseId, item.variantId),
       );
     }
   }
@@ -297,7 +339,7 @@ async function postInvoice(
     p.id,
     "invoice.posted",
     id,
-    JSON.stringify({ sourceType, sourceId, totals }),
+    JSON.stringify({ sourceType, sourceId, routeId: input.routeId || null, stockWarehouseId, totals }),
   );
   return {
     invoice: {
@@ -537,6 +579,7 @@ routes.delete("/invoice-drafts/:id", async (c) => {
 const freeIssueInput = z.object({
   customerId: z.string(),
   warehouseId: z.string(),
+  routeId: z.string().optional(),
   issueDate: z.string().date(),
   reason: z.enum(["sample", "promotion", "trial", "replacement", "other"]),
   notes: z.string().max(1000).default(""),
@@ -576,6 +619,8 @@ routes.post("/free-issues", async (c) => {
   if (existing) return c.json(existing);
   if (new Set(d.items.map((x) => x.variantId)).size !== d.items.length)
     return c.json({ error: "Duplicate variants" }, 400);
+  try { await validateRouteSource(db,p,d.routeId,d.warehouseId,d.customerId); }
+  catch(error){ return c.json({error:(error as Error).message},409); }
   const scope = await checkScope(c, p, d.customerId, d.warehouseId);
   if (scope) return scope;
   const rows = await variants(
@@ -608,6 +653,7 @@ routes.post("/free-issues", async (c) => {
           null,
         ),
     ];
+  if(d.routeId) statements.push(db.prepare("INSERT INTO distribution_entity_routes(entity_type,entity_id,route_id) VALUES('free_issue',?,?)").bind(id,d.routeId));
   for (const item of d.items) {
     const v = rows.get(item.variantId)!;
     statements.push(
@@ -618,13 +664,14 @@ routes.post("/free-issues", async (c) => {
         .bind(uuid(), id, item.variantId, item.quantity, v.cost_cents),
     );
     if (d.status === "confirmed") {
+      const movementId=uuid();
       statements.push(
         db
           .prepare(
             "INSERT INTO stock_movements(id,variant_id,from_warehouse,to_warehouse,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?,?)",
           )
           .bind(
-            uuid(),
+            movementId,
             item.variantId,
             d.warehouseId,
             null,
@@ -634,6 +681,7 @@ routes.post("/free-issues", async (c) => {
             stamp,
           ),
       );
+      if(d.routeId) statements.push(db.prepare("INSERT INTO stock_movement_metadata(movement_id,transaction_reference,actor_id,route_id,transfer_id) VALUES(?,?,?,?,NULL)").bind(movementId,reference,p.id,d.routeId));
       statements.push(
         db
           .prepare(
@@ -738,6 +786,7 @@ routes.get("/free-issues/:id", async (c) => {
 const consignmentInput = z.object({
   customerId: z.string(),
   warehouseId: z.string(),
+  routeId: z.string().optional(),
   issueDate: z.string().date(),
   expectedSettlementDate: z.string().date().nullable().optional(),
   notes: z.string().max(1000).default(""),
@@ -784,6 +833,8 @@ routes.post("/consignments", async (c) => {
   if (existing) return c.json(existing);
   if (new Set(d.items.map((x) => x.variantId)).size !== d.items.length)
     return c.json({ error: "Duplicate variants" }, 400);
+  try { await validateRouteSource(db,p,d.routeId,d.warehouseId,d.customerId); }
+  catch(error){ return c.json({error:(error as Error).message},409); }
   const scope = await checkScope(c, p, d.customerId, d.warehouseId);
   if (scope) return scope;
   await variants(
@@ -815,7 +866,9 @@ routes.post("/consignments", async (c) => {
           null,
         ),
     ];
+  if(d.routeId) statements.push(db.prepare("INSERT INTO distribution_entity_routes(entity_type,entity_id,route_id) VALUES('consignment',?,?)").bind(id,d.routeId));
   for (const item of d.items) {
+    const movementId=uuid();
     statements.push(
       db
         .prepare(
@@ -835,7 +888,7 @@ routes.post("/consignments", async (c) => {
           "INSERT INTO stock_movements(id,variant_id,from_warehouse,to_warehouse,quantity,reason,reference_id,created_at) VALUES(?,?,?,?,?,?,?,?)",
         )
         .bind(
-          uuid(),
+          movementId,
           item.variantId,
           d.warehouseId,
           null,
@@ -845,6 +898,7 @@ routes.post("/consignments", async (c) => {
           stamp,
         ),
     );
+    if(d.routeId) statements.push(db.prepare("INSERT INTO stock_movement_metadata(movement_id,transaction_reference,actor_id,route_id,transfer_id) VALUES(?,?,?,?,NULL)").bind(movementId,reference,p.id,d.routeId));
     statements.push(
       db
         .prepare(
