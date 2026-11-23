@@ -7,7 +7,7 @@ import { motion, useReducedMotion } from 'motion/react';
 
 export default function Login() {
   const [mode, setMode] = useState<'password' | 'passcode'>('passcode');
-  const [username, setUsername] = useState('Admin');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [passcode, setPasscode] = useState(['', '', '', '']);
   const [error, setError] = useState('');
@@ -109,16 +109,6 @@ export default function Login() {
       nextPin[idx] = '';
       setPasscode(nextPin);
       pinInputRefs[idx].current?.focus();
-    }
-  }
-
-  function handleQuickAdminFill() {
-    setUsername('Admin');
-    if (mode === 'password') {
-      setPassword('Admin2026');
-    } else {
-      setPasscode(['2', '0', '2', '6']);
-      submitPasscode('2026');
     }
   }
 
@@ -248,41 +238,6 @@ export default function Login() {
             </button>
           </div>
 
-          {/* Quick Admin Helper Chip */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              background: 'rgba(12, 80, 81, 0.05)',
-              border: '1px dashed var(--brand-border, #DDEBE5)',
-              borderRadius: 10,
-              padding: '8px 12px',
-              marginBottom: 18,
-              fontSize: 12,
-            }}
-          >
-            <div style={{ color: 'var(--brand-text, #142C2A)' }}>
-              <strong>Admin:</strong> Username <code>Admin</code> | PIN <code>2026</code>
-            </div>
-            <button
-              type="button"
-              onClick={handleQuickAdminFill}
-              style={{
-                background: 'var(--brand-accent, #92FD6F)',
-                color: 'var(--brand-text, #142C2A)',
-                border: 'none',
-                borderRadius: 6,
-                padding: '4px 8px',
-                fontSize: 11,
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
-              Autofill Admin
-            </button>
-          </div>
-
           {mode === 'passcode' ? (
             /* 4-Digit Passcode Mode */
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -294,7 +249,7 @@ export default function Login() {
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Admin, or your username"
+                  placeholder=""
                   style={{
                     width: '100%',
                     padding: '10px 14px',
@@ -466,7 +421,7 @@ export default function Login() {
                   autoComplete="username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="e.g. Admin or user@business.com"
+                  placeholder=""
                   required
                 />
               </label>
@@ -477,7 +432,7 @@ export default function Login() {
                   autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="e.g. Admin2026"
+                  placeholder=""
                   required
                 />
               </label>
