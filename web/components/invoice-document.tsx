@@ -1,4 +1,5 @@
 "use client";
+import { Phone, MessageCircle, Mail, MapPin } from "lucide-react";
 import { amount, lkr, type InvoiceModel, type ThermalSettings } from "@/lib/invoice-model";
 
 /** A4 commercial invoice — used for the on-screen preview and for A4 printing. */
@@ -106,12 +107,38 @@ export function InvoiceDocument({ model }: { model: InvoiceModel }) {
       </table>
 
       <section className="inv-bottom">
-        <div className="inv-notes">
+        <div className="inv-left-meta">
+          <div className="inv-contacts">
+            {b.phone && (
+              <div className="inv-contact-row">
+                <span className="inv-icon-box"><Phone size={13} /></span>
+                <span>{b.phone}</span>
+              </div>
+            )}
+            {b.whatsapp && (
+              <div className="inv-contact-row">
+                <span className="inv-icon-box"><MessageCircle size={13} /></span>
+                <span>WhatsApp: {b.whatsapp}</span>
+              </div>
+            )}
+            {b.email && (
+              <div className="inv-contact-row">
+                <span className="inv-icon-box"><Mail size={13} /></span>
+                <span>{b.email}</span>
+              </div>
+            )}
+            {b.address && (
+              <div className="inv-contact-row">
+                <span className="inv-icon-box"><MapPin size={13} /></span>
+                <span>{b.address}</span>
+              </div>
+            )}
+          </div>
           {model.notes && (
-            <>
+            <div className="inv-notes">
               <span className="inv-label">Notes</span>
               <p>{model.notes}</p>
-            </>
+            </div>
           )}
         </div>
         <div className="inv-totals">
@@ -132,16 +159,14 @@ export function InvoiceDocument({ model }: { model: InvoiceModel }) {
             </div>
           )}
           <div className="inv-grand">
-            <span>GRAND TOTAL</span>
+            <span>TOTAL</span>
             <b>{lkr(model.totalCents)}</b>
           </div>
-          <div>
-            <span>Amount paid</span>
-            <b>{lkr(model.paidCents)}</b>
-          </div>
-          <div className={`inv-out ${model.outstandingCents > 0 ? "due" : "clear"}`}>
-            <span>Outstanding balance</span>
-            <b>{lkr(model.outstandingCents)}</b>
+          <div className="inv-payment-info">
+            <span className="inv-label">Payment Info</span>
+            <div className="inv-pay-row"><span>Method:</span> <b>{model.paymentMethod || "Cash"}</b></div>
+            <div className="inv-pay-row"><span>Paid:</span> <b>{lkr(model.paidCents)}</b></div>
+            <div className="inv-pay-row"><span>Balance:</span> <b className={model.outstandingCents > 0 ? "inv-due" : "inv-clear"}>{lkr(model.outstandingCents)}</b></div>
           </div>
         </div>
       </section>
@@ -159,7 +184,20 @@ export function InvoiceDocument({ model }: { model: InvoiceModel }) {
       </section>
 
       <footer className="inv-foot">
-        <span className="inv-leaf" aria-hidden="true" />
+        <svg className="inv-leaf-svg" viewBox="0 0 320 140" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0,140 C60,50 180,20 320,140 L0,140 Z" fill="url(#leaf-lime-grad)" />
+          <path d="M0,140 C70,75 160,50 250,140 L0,140 Z" fill="url(#leaf-teal-grad)" />
+          <defs>
+            <linearGradient id="leaf-lime-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#92FD6F" />
+              <stop offset="100%" stopColor="#287E65" />
+            </linearGradient>
+            <linearGradient id="leaf-teal-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#287E65" />
+              <stop offset="100%" stopColor="#0C5051" />
+            </linearGradient>
+          </defs>
+        </svg>
         <p>Thank you for your business · {b.name}</p>
       </footer>
     </article>

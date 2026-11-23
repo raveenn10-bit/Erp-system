@@ -286,9 +286,7 @@ export async function buildA4InvoicePdf(model: InvoiceModel, opts: { logoSrc?: s
   ];
   const headerH = 9;
   const drawHeader = () => {
-    pdf.setFillColor(...TEAL);
-    pdf.rect(L, y, R - L, headerH, "F");
-    gradientBar(pdf, L, y + headerH, R - L, 1.1, LIME, GREEN);
+    gradientBar(pdf, L, y, R - L, headerH, [116, 216, 72], TEAL);
     for (const c of cols)
       w.text(c.label, c.x, y + 6, { size: 8.5, bold: true, color: [255, 255, 255], align: c.align });
     y += headerH + 1.1;
@@ -349,10 +347,8 @@ export async function buildA4InvoicePdf(model: InvoiceModel, opts: { logoSrc?: s
     ty += 5.6;
   }
   ty -= 1;
-  pdf.setFillColor(...TEAL);
-  pdf.roundedRect(tx - 3, ty, R - tx + 3, 10, 1.5, 1.5, "F");
-  gradientBar(pdf, tx - 3, ty + 10, R - tx + 3, 1.1, LIME, GREEN);
-  w.text("GRAND TOTAL", tx, ty + 6.7, { size: 10, bold: true, color: LIME });
+  gradientBar(pdf, tx - 3, ty, R - tx + 3, 10, [116, 216, 72], GREEN);
+  w.text("GRAND TOTAL", tx, ty + 6.7, { size: 10, bold: true, color: [255, 255, 255] });
   w.text(lkr(model.totalCents), R - 2, ty + 6.7, { size: 11, bold: true, color: [255, 255, 255], align: "right" });
   ty += 16;
   w.text("Amount paid", tx, ty, { size: 9.5, color: MUTED });
@@ -410,11 +406,20 @@ export async function buildA4InvoicePdf(model: InvoiceModel, opts: { logoSrc?: s
   const pages = pdf.getNumberOfPages();
   for (let p = 1; p <= pages; p++) {
     pdf.setPage(p);
-    // decorative leaf sweep (bottom-left), kept below CONTENT_BOTTOM
+    // decorative curved leaf sweep (bottom-left) matching reference design
     pdf.setFillColor(...LIME);
-    pdf.triangle(0, PH, 0, PH - 22, 46, PH, "F");
+    pdf.moveTo(0, PH);
+    pdf.lineTo(0, PH - 26);
+    pdf.curveTo(35, PH - 24, 75, PH - 6, 95, PH);
+    pdf.close();
+    pdf.fill();
+
     pdf.setFillColor(...GREEN);
-    pdf.triangle(0, PH, 0, PH - 13, 70, PH, "F");
+    pdf.moveTo(0, PH);
+    pdf.lineTo(0, PH - 16);
+    pdf.curveTo(30, PH - 15, 60, PH - 4, 75, PH);
+    pdf.close();
+    pdf.fill();
     pdf.setDrawColor(...LINE);
     pdf.line(L, PH - 18, R, PH - 18);
     w.text(`Thank you for your business · ${model.business.name}`, R, PH - 12.5, {
