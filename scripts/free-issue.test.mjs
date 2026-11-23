@@ -1,0 +1,24 @@
+// node --experimental-strip-types scripts/free-issue.test.mjs
+import assert from 'node:assert/strict';
+const f = await import('../web/lib/free-issue.ts');
+const T = f.DEFAULT_TIERS;
+const cases = { 0: 0, 11: 0, 12: 1, 23: 1, 24: 3, 35: 3, 36: 4, 48: 6, 60: 7 };
+for (const [q, want] of Object.entries(cases)) assert.equal(f.freeQuantity(Number(q), T), want, `qty ${q}`);
+assert.equal(f.freeQuantity(10, [{ buy: 10, free: 2 }]), 2);
+assert.equal(f.freeQuantity(10, []), 0);
+const rules = [{ variantId: 'v50', active: true, tiers: T }, { variantId: 'v100', active: false, tiers: T }];
+const m = f.freeForLines([{ variantId: 'v50', quantity: 10 }, { variantId: 'v50', quantity: 14 }, { variantId: 'v100', quantity: 24 }, { variantId: 'x', quantity: 99 }], rules);
+assert.equal(m.get('v50'), 3, 'lines of the same product are added together (10+14=24 → 3)');
+assert.equal(m.has('v100'), false, 'inactive rule ignored');
+assert.equal(m.has('x'), false, 'no rule → no free');
+assert.equal(f.describeTiers(T), '12 → 1 free · 24 → 3 free');
+const prods = [{ variant_id: 'a', label: '50g packet', grams: 50 }, { variant_id: 'b', label: '100g packet', grams: null }, { variant_id: 'c', label: '200 g', grams: 200 }, { variant_id: 'd', label: '1kg bag', grams: 1000 }, { variant_id: 'e', label: '400g', grams: 400 }];
+assert.deepEqual(f.defaultRules(prods).map(r => r.variantId), ['a', 'b', 'c'], 'default only for 50/100/200 g');
+assert.equal(f.effectiveRules(null, prods).length, 3);
+assert.equal(f.effectiveRules([], prods).length, 0, 'saved empty list = admin turned all offers off');
+const note = f.freeNote([{ name: 'Nugathalawa Ceylon Tea · 100g packet', quantity: 3 }, { name: 'Tea · 50g', quantity: 1 }], 'Deliver Friday');
+assert.equal(note, 'Free issue: Nugathalawa Ceylon Tea · 100g packet × 3, Tea · 50g × 1\nDeliver Friday');
+const back = f.parseFreeNote(note);
+assert.equal(back.get('Nugathalawa Ceylon Tea · 100g packet'), 3); assert.equal(back.get('Tea · 50g'), 1);
+assert.equal(f.freeNote([], 'x'), 'x'); assert.equal(f.parseFreeNote('nothing').size, 0);
+console.log('free issue: all tests passed');

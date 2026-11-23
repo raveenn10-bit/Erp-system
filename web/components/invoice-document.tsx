@@ -43,7 +43,7 @@ function Table({ m, lines }: { m: InvoiceModel; lines: InvoiceModel['lines'] }) 
       <tbody>
         {lines.map(l => (
           <tr key={l.no}>
-            <td className="n">{l.no}</td><td className="p">{l.product}</td><td>{l.pack}</td>
+            <td className="n">{l.no}</td><td className="p">{l.product}{l.freeQty ? <span className="ninv-free">incl. {l.freeQty} FREE</span> : null}</td><td>{l.pack}</td>
             <td className="r">{l.qty}</td><td className="r">{lkr(l.unit, false)}</td>
             {m.showShopPrice && <td className="r">{l.shopPrice ? lkr(l.shopPrice, false) : '—'}</td>}
             <td className="r">{l.discount ? lkr(-l.discount, false) : '—'}</td><td className="r b">{lkr(l.total, false)}</td>
@@ -64,6 +64,7 @@ function Totals({ m }: { m: InvoiceModel }) {
       </div>
       <dl className="ninv-totals">
         <dt>Subtotal</dt><dd>{lkr(m.subtotal)}</dd>
+        {m.freeCount > 0 && <><dt>Free issue ({m.freeCount} pcs)</dt><dd>FREE</dd></>}
         {m.itemDiscount > 0 && <><dt>Item discounts</dt><dd>{lkr(-m.itemDiscount)}</dd></>}
         {m.invoiceDiscount > 0 && <><dt>Invoice discount</dt><dd>{lkr(-m.invoiceDiscount)}</dd></>}
         <dt className="grand">Grand total</dt><dd className="grand">{lkr(m.total)}</dd>
@@ -141,11 +142,13 @@ export function InvoiceReceipt({ m, spec }: { m: InvoiceModel; spec: { dots: num
       {m.lines.map(l => (
         <div key={l.no} className="rcpt-item">
           <div className="rcpt-b">{l.product} {l.pack && `· ${l.pack}`}</div>
-          <div className="rcpt-row"><span>{l.qty} × {lkr(l.unit, false)}{l.discount ? `  (-${lkr(l.discount, false)})` : ''}</span><span className="rcpt-b">{lkr(l.total, false)}</span></div>
+          <div className="rcpt-row"><span>{l.qty - (l.freeQty || 0)} × {lkr(l.unit, false)}{l.discount ? `  (-${lkr(l.discount, false)})` : ''}</span><span className="rcpt-b">{lkr(l.total, false)}</span></div>
+          {l.freeQty ? <div className="rcpt-row"><span>+ {l.freeQty} FREE ISSUE</span><span className="rcpt-b">FREE</span></div> : null}
         </div>
       ))}
       <div className="rcpt-hr" />
       <div className="rcpt-row"><span>Subtotal</span><span>{lkr(m.subtotal, false)}</span></div>
+      {m.freeCount > 0 && <div className="rcpt-row"><span>Free issue</span><span>{m.freeCount} pcs FREE</span></div>}
       {m.itemDiscount + m.invoiceDiscount > 0 && <div className="rcpt-row"><span>Discounts</span><span>{lkr(-(m.itemDiscount + m.invoiceDiscount), false)}</span></div>}
       <div className="rcpt-row rcpt-b rcpt-big" style={{ fontSize: fs * 1.25 }}><span>TOTAL</span><span>{lkr(m.total)}</span></div>
       <div className="rcpt-row"><span>Paid</span><span>{lkr(m.paid, false)}</span></div>

@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { api, formatWhatsApp, idempotency, money, normalizeWhatsApp } from "@/lib/api";
 import { isNative, printDocumentSheet, publicOrigin, savePdfDoc, toast } from "@/lib/native";
+import { describeTiers, effectiveRules, freeForLines, freeNote, type FreeIssueRule } from "@/lib/free-issue";
 
 export type Product = {
   variant_id: string;
@@ -320,7 +321,13 @@ export function BillingPanel({
       queryKey: ["billing-settings"],
       queryFn: () => api<Record<string, string>>("/billing/settings"),
     }),
-    activeRoutes = useQuery({queryKey:["daily-routes"],queryFn:()=>api<ActiveRoute[]>("/daily-routes")});
+    activeRoutes = useQuery({queryKey:["daily-routes"],queryFn:()=>api<ActiveRoute[]>("/daily-routes")}),
+    printSettings = useQuery({
+      queryKey: ["print-settings"],
+      queryFn: () => api<{ freeIssueRules?: FreeIssueRule[] | null }>("/billing/print-settings"),
+    });
+  const [applyFree, setApplyFree] = useState(true),
+    [freeOverride, setFreeOverride] = useState<Record<string, number>>({});
   const [customerId, setCustomer] = useState(""),
     [routeId,setRouteId]=useState(""),
     [customerWhatsapp, setCustomerWhatsapp] = useState(""),
@@ -382,29 +389,52 @@ export function BillingPanel({
       total: afterItems - invoiceDiscount,
     };
   }, [lines, products, invoiceDiscountType, invoiceDiscountValue]);
+  // Free issue offers (Settings › Free issue offers): computed from the paid lines, editable per product.
+  const freeRules = useMemo(() => effectiveRules(printSettings.data?.freeIssueRules, products as Array<Product & { grams?: number | null }>), [printSettings.data, products]);
+  const autoFree = useMemo(() => freeForLines(lines, freeRules), [lines, freeRules]);
+  const freeLines = useMemo(() => {
+    if (!applyFree) return [] as Array<{ variantId: string; quantity: number; auto: number; priceType: Line["priceType"] }>;
+    const ids = new Set([...autoFree.keys(), ...Object.keys(freeOverride)]);
+    return [...ids]
+      .filter((id) => lines.some((l) => l.variantId === id))
+      .map((id) => ({
+        variantId: id,
+        auto: autoFree.get(id) || 0,
+        quantity: freeOverride[id] ?? autoFree.get(id) ?? 0,
+        priceType: lines.find((l) => l.variantId === id)!.priceType,
+      }));
+  }, [applyFree, autoFree, freeOverride, lines]);
   function payload(includePayment = true) {
     return {
       customerId,
       warehouseId,
       routeId: routeId || undefined,
       invoiceDate,
+      // Free issue packets are merged into the product's own line: quantity + free,
+      // with the free packets' value as a fixed discount (one stock movement per product).
       items: lines
         .filter((x) => x.variantId)
-        .map((x) => ({
-          variantId: x.variantId,
-          quantity: x.quantity,
-          priceType: x.priceType,
-          discount:
-            x.discountValue > 0
-              ? {
-                  type: x.discountType,
-                  value:
-                    x.discountType === "percent"
-                      ? Math.round(x.discountValue * 100)
-                      : cents(x.discountValue),
-                }
-              : undefined,
-        })),
+        .map((x) => {
+          const p = products.find((v) => v.variant_id === x.variantId);
+          const unit = !p ? 0 : x.priceType === "retail" ? p.retail_cents : x.priceType === "shop" ? p.shop_price_cents : p.wholesale_cents;
+          const free = freeLines.find((f) => f.variantId === x.variantId)?.quantity || 0;
+          const gross = unit * x.quantity;
+          const own = x.discountValue > 0
+            ? x.discountType === "percent" ? percent(gross, x.discountValue) : Math.min(gross, cents(x.discountValue))
+            : 0;
+          if (free > 0) {
+            return { variantId: x.variantId, quantity: x.quantity + free, priceType: x.priceType, discount: { type: "fixed" as const, value: own + unit * free } };
+          }
+          return {
+            variantId: x.variantId,
+            quantity: x.quantity,
+            priceType: x.priceType,
+            discount:
+              x.discountValue > 0
+                ? { type: x.discountType, value: x.discountType === "percent" ? Math.round(x.discountValue * 100) : cents(x.discountValue) }
+                : undefined,
+          };
+        }),
       invoiceDiscount:
         invoiceDiscountValue > 0
           ? {
@@ -418,7 +448,13 @@ export function BillingPanel({
       paymentMethod,
       paymentTerms,
       dueAt: dueAt || null,
-      notes,
+      notes: freeNote(
+        freeLines.filter((f) => f.quantity > 0).map((f) => {
+          const p = products.find((v) => v.variant_id === f.variantId);
+          return { name: p ? `${p.name} · ${p.label}` : f.variantId, quantity: f.quantity };
+        }),
+        notes,
+      ),
       terms: terms || settings.data?.invoice_default_terms || "",
       ...(includePayment
         ? {
@@ -669,6 +705,46 @@ export function BillingPanel({
           </label>
         </div>
         <ProductLines lines={lines} setLines={setLines} products={products} />
+        <div className="free-box" aria-label="Free issue">
+          <label className="free-toggle">
+            <input type="checkbox" checked={applyFree} onChange={(e) => setApplyFree(e.target.checked)} />
+            <b>🎁 Free issue · <span lang="si">නොමිලේ</span></b>
+            <small>{freeRules.some((r) => r.active) ? "Offers from Settings are added automatically" : "No free issue offers set up yet (Settings › Free issue offers)"}</small>
+          </label>
+          {applyFree && freeLines.length > 0 && (
+            <ul className="free-list">
+              {freeLines.map((f) => {
+                const p = products.find((x) => x.variant_id === f.variantId);
+                const rule = freeRules.find((r) => r.variantId === f.variantId);
+                return (
+                  <li key={f.variantId}>
+                    <span>
+                      <b>{p ? `${p.name} · ${p.label}` : f.variantId}</b>
+                      <small>{rule ? describeTiers(rule.tiers) : "Manual"}{f.quantity !== f.auto ? ` · auto ${f.auto}` : ""}</small>
+                    </span>
+                    <span className="free-qty">
+                      <button type="button" className="secondary" aria-label="Fewer free" onClick={() => setFreeOverride((o) => ({ ...o, [f.variantId]: Math.max(0, f.quantity - 1) }))}>−</button>
+                      <b aria-live="polite">{f.quantity} FREE</b>
+                      <button type="button" className="secondary" aria-label="More free" onClick={() => setFreeOverride((o) => ({ ...o, [f.variantId]: f.quantity + 1 }))}>+</button>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {applyFree && (
+            <div className="free-add">
+              {lines.filter((l) => l.variantId && !freeLines.some((f) => f.variantId === l.variantId)).map((l) => {
+                const p = products.find((x) => x.variant_id === l.variantId);
+                return (
+                  <button key={l.variantId} type="button" className="secondary" onClick={() => setFreeOverride((o) => ({ ...o, [l.variantId]: 1 }))}>
+                    + Free {p ? p.label : "item"}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
         <div className="form-grid">
           <label>
             Invoice discount type
