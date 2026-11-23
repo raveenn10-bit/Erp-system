@@ -73,6 +73,7 @@ export function BillingSettings() {
         }),
       });
       await client.invalidateQueries({ queryKey: ["billing-settings"] });
+      await client.invalidateQueries({ queryKey: ["print-settings"] });
       setMessage("Billing settings saved.");
     } catch (error) {
       setMessage((error as Error).message);

@@ -54,6 +54,7 @@ import {
 } from "lucide-react";
 import { api, idempotency, money } from "@/lib/api";
 import { InvoiceActions } from "@/components/invoice-actions";
+import { ThermalPrinterSettings } from "@/components/thermal-settings";
 import {
   NotificationBellAndDrawer,
   CreditAlertsDashboardPanel,
@@ -751,6 +752,7 @@ function Workspace() {
               <FormPanel title="Invoice print settings">
                 <BillingSettings />
               </FormPanel>
+              <ThermalPrinterSettings businessName={settings.data?.name || ""} />
               <CreditAlertSettingsPanel />
               <div style={{ marginTop: 20 }}>
                 <ChangePasswordPanel />
