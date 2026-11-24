@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -213,7 +214,7 @@ export function NotificationBellAndDrawer({
       </button>
 
       {/* Slide-in Drawer */}
-      {open && (
+      {open && typeof document !== "undefined" && createPortal(
         <div
           data-overlay
           style={{
@@ -458,7 +459,8 @@ export function NotificationBellAndDrawer({
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* WhatsApp Reminder Direct Modal */}
@@ -545,7 +547,7 @@ Nugathalawa Ceylon Tea Export (Pvt) Ltd`;
     }
   }
 
-  return (
+  return createPortal(
     <div
       data-overlay
       style={{
@@ -648,7 +650,8 @@ Nugathalawa Ceylon Tea Export (Pvt) Ltd`;
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
