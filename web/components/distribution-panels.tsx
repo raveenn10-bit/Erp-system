@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FileDown,
@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { api, formatWhatsApp, idempotency, money, normalizeWhatsApp } from "@/lib/api";
 import { isNative, printDocumentSheet, publicOrigin, savePdfDoc, toast } from "@/lib/native";
+import type { InvoiceDetail } from "@/lib/invoice/model";
 import { describeTiers, effectiveRules, freeForLines, freeNote, type FreeIssueRule } from "@/lib/free-issue";
 
 export type Product = {
@@ -306,11 +307,16 @@ export function BillingPanel({
   products,
   stocks,
   onPosted,
+  editInvoice,
+  onCancelEdit,
 }: {
   customers: Customer[];
   products: Product[];
   stocks: Stock[];
   onPosted: (id: string) => void;
+  /** Admin edit: load this posted invoice; finalizing voids it and posts the new one. */
+  editInvoice?: InvoiceDetail | null;
+  onCancelEdit?: () => void;
 }) {
   const client = useQueryClient(),
     drafts = useQuery({
@@ -354,6 +360,7 @@ export function BillingPanel({
     [notes, setNotes] = useState(""),
     [terms, setTerms] = useState(""),
     [draftId, setDraftId] = useState<string | null>(null),
+    [replacing, setReplacing] = useState<{ id: string; number: string } | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const routeDetail=useQuery({queryKey:["route-detail",routeId],queryFn:()=>api<any>(`/daily-routes/${routeId}`),enabled:!!routeId});
@@ -461,6 +468,7 @@ export function BillingPanel({
             amountPaidCents: cents(amountPaid),
             idempotencyKey: idempotency(),
             draftId: draftId || undefined,
+            replacesInvoiceId: replacing?.id,
           }
         : {}),
     };
@@ -489,6 +497,7 @@ export function BillingPanel({
         body: JSON.stringify(payload(true)),
       });
       await client.invalidateQueries();
+      if (replacing) { setReplacing(null); setApplyFree(true); }
       onPosted(result.id);
     } catch (e) {
       if ((e as Error)?.name === "OfflineQueuedError") { toast((e as Error).message); resetLinesOffline(setLines); } else { setError((e as Error).message); toast((e as Error).message); }
@@ -540,6 +549,7 @@ export function BillingPanel({
         );
       }
 
+      if (replacing) { setReplacing(null); setApplyFree(true); }
       onPosted(result.id);
     } catch (e) {
       if ((e as Error)?.name === "OfflineQueuedError") { toast((e as Error).message); resetLinesOffline(setLines); } else { setError((e as Error).message); toast((e as Error).message); }
@@ -600,6 +610,45 @@ export function BillingPanel({
     await savePdfDoc(pdf, `DRAFT-INVOICE-${invoiceDate}.pdf`);
   }
 
+  useEffect(() => {
+    if (!editInvoice) return;
+    const i = editInvoice.invoice;
+    setDraftId(null);
+    setReplacing({ id: i.id, number: i.number });
+    // Quantities already include free packets and their value is in the line discount,
+    // so don't add free issue again (admin can switch it back on).
+    setApplyFree(false);
+    setFreeOverride({});
+    setCustomer(i.customer_id || "");
+    setWarehouse(i.warehouse_id || "main");
+    setRouteId("");
+    setInvoiceDate(new Date(i.created_at).toLocaleDateString("en-CA", { timeZone: "Asia/Colombo" }));
+    setLines(
+      editInvoice.items.map((x) => ({
+        variantId: x.variant_id || "",
+        quantity: x.quantity,
+        priceType: (["wholesale", "retail", "shop"].includes(x.price_type) ? x.price_type : "wholesale") as Line["priceType"],
+        discountType: "fixed",
+        discountValue: (x.item_discount_cents || 0) / 100,
+      })),
+    );
+    setInvoiceDiscountType("fixed");
+    setInvoiceDiscountValue((i.invoice_discount_cents || 0) / 100);
+    setAmountPaid((i.paid_cents || 0) / 100);
+    setPaymentMethod(i.payment_method || "cash");
+    setPaymentTerms(i.payment_terms || "");
+    setDueAt(i.due_at || "");
+    setNotes(i.notes || "");
+    setTerms(i.terms || "");
+    setCustomerWhatsapp(i.customer_whatsapp || "");
+    setError("");
+  }, [editInvoice]);
+  function stopEditing() {
+    setReplacing(null);
+    setApplyFree(true);
+    onCancelEdit?.();
+  }
+
   function loadDraft(d: any) {
     const p = JSON.parse(d.payload_json);
     setDraftId(d.id);
@@ -643,8 +692,20 @@ export function BillingPanel({
             </span>
           </div>
           {draftId && <span className="badge">Editing draft</span>}
+          {replacing && <span className="badge due">Editing {replacing.number}</span>}
         </div>
         {error && <div className="error">{error}</div>}
+        {replacing && (
+          <div className="admin-bar">
+            <span>
+              <b>{replacing.number}</b> සංස්කරණය කරනවා. Finalize කළාම පරණ invoice එක void වෙලා (stock ආපහු, ගෙවීම් reverse) මේ විස්තර එක්ක අලුත් invoice එකක් හැදෙනවා.
+            </span>
+            <button type="button" className="secondary small" onClick={stopEditing}>
+              <RotateCcw size={14} />
+              Cancel edit
+            </button>
+          </div>
+        )}
         <div className="form-grid">
           <label>
             Daily route (optional)
@@ -847,7 +908,7 @@ export function BillingPanel({
             disabled={busy || !customerId || !lines.some((x) => x.variantId)}
             onClick={post}
           >
-            Finalize invoice
+            {replacing ? `Save changes (replace ${replacing.number})` : "Finalize invoice"}
           </button>
           {draftId && (
             <button className="secondary" onClick={() => setDraftId(null)}>

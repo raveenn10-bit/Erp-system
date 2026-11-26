@@ -11,10 +11,12 @@ export type InvoiceDetail = {
     business_name: string; business_address: string; business_phone: string; business_whatsapp?: string; business_email?: string;
     subtotal_cents: number; item_discount_cents: number; invoice_discount_cents: number; total_cents: number; paid_cents: number;
     due_at: string | null; payment_method: string; payment_terms: string; notes: string; terms: string; status: string;
+    customer_id?: string; warehouse_id?: string;
   };
   items: Array<{
     id: string; name: string; label: string; quantity: number;
     unit_price_cents: number; shop_price_cents: number; item_discount_cents: number; line_cents: number; price_type: string;
+    variant_id?: string;
   }>;
 };
 

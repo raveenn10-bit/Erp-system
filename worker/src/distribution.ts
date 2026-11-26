@@ -10,6 +10,7 @@ import {
   type Env,
   type Principal,
 } from "./security";
+import { voidInvoiceStatements } from "./admin-records";
 import { dueDate, invoiceTotals, lineTotal, normalizeWhatsApp, formatWhatsApp, type Discount } from "./finance";
 
 const routes = new Hono<Env>();
@@ -41,6 +42,8 @@ const billingInput = z.object({
   terms: z.string().max(1500).default(""),
   customerWhatsapp: z.string().max(40).optional().default(""),
   draftId: z.string().optional(),
+  /** Admin edit: void this posted invoice and post the new one in the same transaction. */
+  replacesInvoiceId: z.string().min(1).optional(),
 });
 const distributionItems = z
   .array(
@@ -153,6 +156,8 @@ async function postInvoice(
       .bind(input.idempotencyKey)
       .first();
   if (existing) return { existing };
+  if (input.replacesInvoiceId && !p.admin)
+    throw new Error("Only an admin can edit a posted invoice");
   if (new Set(input.items.map((x) => x.variantId)).size !== input.items.length)
     throw new Error("Duplicate product variants are not allowed");
   let stockWarehouseId = input.warehouseId;
@@ -256,6 +261,12 @@ async function postInvoice(
         shareToken,
       ),
   ];
+  let replaced: Awaited<ReturnType<typeof voidInvoiceStatements>> | null = null;
+  if (input.replacesInvoiceId) {
+    replaced = await voidInvoiceStatements(db, input.replacesInvoiceId);
+    // Void first: returns the old stock and releases the old credit before the new invoice is checked.
+    statements.unshift(...replaced.statements);
+  }
   if(input.routeId) statements.push(db.prepare("INSERT INTO distribution_entity_routes(entity_type,entity_id,route_id) VALUES('invoice',?,?)").bind(id,input.routeId));
   for (const item of calculated) {
     const itemDiscount = invoiceTotals([
@@ -339,8 +350,10 @@ async function postInvoice(
     p.id,
     "invoice.posted",
     id,
-    JSON.stringify({ sourceType, sourceId, routeId: input.routeId || null, stockWarehouseId, totals }),
+    JSON.stringify({ sourceType, sourceId, routeId: input.routeId || null, stockWarehouseId, totals, replacesInvoiceId: input.replacesInvoiceId || null }),
   );
+  if (replaced)
+    await audit(db, p.id, "invoice.voided", input.replacesInvoiceId!, JSON.stringify({ reason: "edited", replacedBy: id, ...replaced.snapshot }));
   return {
     invoice: {
       id,

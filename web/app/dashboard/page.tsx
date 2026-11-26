@@ -56,6 +56,8 @@ import {
 } from "lucide-react";
 import { api, idempotency, money } from "@/lib/api";
 import { InvoiceActions } from "@/components/invoice-actions";
+import { ProductAdminActions, StockAdminActions } from "@/components/admin-records";
+import type { InvoiceDetail } from "@/lib/invoice/model";
 import { BiometricSettings } from "@/components/biometric-login";
 import { UserGuide } from "@/components/user-guide";
 import { PrinterSettingsPanel } from "@/components/printer-settings";
@@ -179,6 +181,8 @@ function Workspace() {
     [invoiceId, setInvoiceId] = useState<string | null>(null),
     [customerAccountId, setCustomerAccountId] = useState<string | null>(null),
     [focusBilling, setFocusBilling] = useState(false),
+    [editInvoice, setEditInvoice] = useState<InvoiceDetail | null>(null),
+    [showVoided, setShowVoided] = useState(false),
     [editingUser, setEditingUser] = useState<{ id: string; name: string; username?: string; role_id: string } | null>(null),
     [editUsername, setEditUsername] = useState(""),
     [editPassword, setEditPassword] = useState(""),
@@ -479,7 +483,16 @@ function Workspace() {
             />
           )}
           {invoiceId && (
-            <InvoiceActions id={invoiceId} close={() => setInvoiceId(null)} />
+            <InvoiceActions
+              id={invoiceId}
+              close={() => setInvoiceId(null)}
+              admin={!!user.admin}
+              onEdit={(d) => {
+                setInvoiceId(null);
+                setEditInvoice(d);
+                openBilling();
+              }}
+            />
           )}{" "}
           {tab === "Overview" && (
             <Overview
@@ -500,7 +513,7 @@ function Workspace() {
                 subtitle="Manage your catalogue and prices from one place."
               />
               <div className="panel">
-                <ProductTable rows={products.data || []} />
+                <ProductTable rows={products.data || []} admin={!!user.admin} />
               </div>
               {user.admin && (
                 <FormPanel title="Add a product">
@@ -598,11 +611,12 @@ function Workspace() {
                         <th>Reserved</th>
                         <th>Allocated</th>
                         <th>Damaged</th>
+                        {user.admin && <th>Actions</th>}
                       </tr>
                     </thead>
                     <tbody>
                       {(stocks.data || []).map((s, i) => (
-                        <tr key={i}>
+                        <tr key={`${s.warehouse_id}:${s.variant_id}`}>
                           <td>{s.name}</td>
                           <td>{s.label}</td>
                           <td>{s.warehouse}</td>
@@ -610,6 +624,11 @@ function Workspace() {
                           <td>{s.reserved_quantity || 0}</td>
                           <td>{s.allocated_quantity || 0}</td>
                           <td>{s.damaged_quantity || 0}</td>
+                          {user.admin && (
+                            <td>
+                              <StockAdminActions warehouseId={s.warehouse_id} variantId={s.variant_id} quantity={s.quantity} />
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -658,8 +677,14 @@ function Workspace() {
                 subtitle="Draft, preview, finalize, print and share professional invoices."
               />
               <div className="panel">
+                {user.admin && (invoices.data || []).some((i) => i.status === "cancelled") && (
+                  <label className="muted" style={{ display: "inline-flex", gap: 6, alignItems: "center", marginBottom: 8 }}>
+                    <input type="checkbox" checked={showVoided} onChange={(e) => setShowVoided(e.target.checked)} />
+                    Show deleted (voided) invoices
+                  </label>
+                )}
                 <InvoiceTable
-                  rows={invoices.data || []}
+                  rows={(invoices.data || []).filter((i) => showVoided || i.status !== "cancelled")}
                   onSelect={setInvoiceId}
                 />
               </div>
@@ -668,7 +693,12 @@ function Workspace() {
                   customers={customers.data || []}
                   products={products.data || []}
                   stocks={stocks.data || []}
-                  onPosted={setInvoiceId}
+                  onPosted={(id) => {
+                    setEditInvoice(null);
+                    setInvoiceId(id);
+                  }}
+                  editInvoice={editInvoice}
+                  onCancelEdit={() => setEditInvoice(null)}
                 />
               </div>
             </>
@@ -1347,7 +1377,7 @@ function InvoiceTable({
         </thead>
         <tbody>
           {rows.map((i) => (
-            <tr key={i.id}>
+            <tr key={i.id} className={i.status === "cancelled" ? "voided" : undefined}>
               <td>
                 {onSelect ? (
                   <button
@@ -1365,8 +1395,8 @@ function InvoiceTable({
               <td>{money(i.total_cents - i.paid_cents)}</td>
               <td>{i.due_at || "Paid"}</td>
               <td>
-                <span className={`badge ${i.due_at ? "due" : ""}`}>
-                  {i.status}
+                <span className={`badge ${i.status === "cancelled" ? "danger" : i.due_at ? "due" : ""}`}>
+                  {i.status === "cancelled" ? "deleted" : i.status}
                 </span>
               </td>
             </tr>
@@ -1379,7 +1409,7 @@ function InvoiceTable({
     </div>
   );
 }
-function ProductTable({ rows }: { rows: Product[] }) {
+function ProductTable({ rows, admin }: { rows: Product[]; admin?: boolean }) {
   return (
     <div className="table-wrap">
       <table className="data-table">
@@ -1392,6 +1422,7 @@ function ProductTable({ rows }: { rows: Product[] }) {
             <th>Retail</th>
             <th>Shop selling</th>
             <th>Main stock</th>
+            {admin && <th>Actions</th>}
           </tr>
         </thead>
         <tbody>
@@ -1406,6 +1437,15 @@ function ProductTable({ rows }: { rows: Product[] }) {
               <td>{money(x.retail_cents)}</td>
               <td>{x.shop_price_cents ? money(x.shop_price_cents) : "—"}</td>
               <td>{x.main_stock}</td>
+              {admin && (
+                <td>
+                  {rows.findIndex((r) => r.id === x.id) === rows.indexOf(x) ? (
+                    <ProductAdminActions productId={x.id} name={x.name} />
+                  ) : (
+                    <span className="muted" style={{ fontSize: 12 }}>↑ same product</span>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

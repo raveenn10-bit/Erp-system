@@ -8,6 +8,7 @@ import { pdfFileName, toInvoiceModel, whatsappMessage, type InvoiceDetail } from
 import { InvoiceA4, A4_PX } from "@/components/invoice-document";
 import { DEFAULT_PRINTER, loadPrinter, printReceipt, shareReceiptToPrinterApp, type PrinterSettings } from "@/lib/invoice/printer";
 import { PrinterSettingsPanel } from "@/components/printer-settings";
+import { InvoiceAdminBar } from "@/components/admin-records";
 
 /** Scales the fixed-size A4 pages down to the available width (no overflow on phones). */
 function ScaledPreview({ children }: { children: React.ReactNode }) {
@@ -31,7 +32,7 @@ function ScaledPreview({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function InvoiceActions({ id, close }: { id: string; close: () => void }) {
+export function InvoiceActions({ id, close, admin, onEdit }: { id: string; close: () => void; admin?: boolean; onEdit?: (d: InvoiceDetail) => void }) {
   const detail = useQuery({ queryKey: ["invoice", id], queryFn: () => api<InvoiceDetail>(`/invoices/${id}`) });
   const settings = useQuery({ queryKey: ["billing-settings"], queryFn: () => api<Record<string, string>>("/billing/settings") });
   const data = detail.data;
@@ -110,6 +111,9 @@ export function InvoiceActions({ id, close }: { id: string; close: () => void })
           <div className="error">Could not load invoice. <button className="secondary" onClick={() => detail.refetch()}><RefreshCw size={14} />Retry</button></div>
         ) : model && (
           <>
+            {admin && data && onEdit && (
+              <InvoiceAdminBar id={data.invoice.id} status={data.invoice.status} onEdit={() => onEdit(data)} onDone={close} />
+            )}
             <div className="ninv-actions" role="toolbar" aria-label="Invoice actions">
               <button className="primary wa" disabled={!!busy} onClick={sendPdf}><MessageCircle size={16} />{busy === "share" ? "Preparing PDF…" : "Send PDF on WhatsApp · WhatsApp යවන්න"}</button>
               <button className="secondary" disabled={!!busy} onClick={() => run("save", async () => saveFile(await pdf(), pdfFileName(model, "A4")))}><Download size={16} />{busy === "save" ? "Saving…" : "Download PDF"}</button>
