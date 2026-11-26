@@ -1039,7 +1039,7 @@ select[multiple] option { padding: 8px; border-radius: 7px; }
 .ninv-totals .due { font-weight: 800; color: #0C5051; background: #eafde3; border-bottom: 0; }
 .ninv-sign { display: grid; grid-template-columns: 1fr 1fr; gap: 70px; margin-top: auto; padding-top: 28px; }
 .ninv-sign div { display: grid; gap: 3px; text-align: center; font-size: 12px; }
-.ninv-sign i { display: block; height: 46px; border-bottom: 1.5px solid #10201f; }
+.ninv-sign i { display: block; height: 56px; border-bottom: 1.8px dotted #10201f; }
 .ninv-sign span { font-weight: 700; } .ninv-sign small { color: #647773; font-size: 10.5px; }
 .ninv-foot { position: absolute; left: 48px; right: 48px; bottom: 26px; display: flex; justify-content: space-between; font-size: 10.5px; color: #647773; border-top: 1px solid #e3eee9; padding-top: 8px; }
 
@@ -1230,3 +1230,12 @@ button.small { padding: 5px 9px; font-size: 12.5px; min-height: 32px; border-rad
 .variant-edit { border: 1px solid var(--line, #d9ded7); border-radius: 12px; padding: 10px 12px; margin: 12px 0 0; }
 .variant-edit legend { font-weight: 750; padding: 0 6px; }
 tr.voided td { opacity: .55; text-decoration: line-through; }
+
+/* Free issue box + two signatures (like the printed bill book) */
+.ninv-freebox { border: 1.5px solid #9bc43a; border-radius: 10px; overflow: hidden; margin: 0 0 12px; max-width: 260px; background: #fbfff4; }
+.ninv-freebox-head { background: #b9d96a; color: #10201f; font-weight: 800; font-size: 12.5px; padding: 6px 12px; letter-spacing: .02em; }
+.ninv-freebox-row { display: flex; align-items: baseline; gap: 8px; padding: 6px 12px; font-size: 13px; border-top: 1px solid #e3eed0; }
+.ninv-freebox-row .sz { font-weight: 700; min-width: 42px; }
+.ninv-freebox-row .dots { flex: 1; border-bottom: 1.5px dotted #9fb59a; transform: translateY(-3px); }
+.ninv-notes .ninv-freebox-row b, .ninv-freebox-row b { display: inline; min-width: 52px; text-align: right; color: #0C5051; font-size: 13px; letter-spacing: 0; text-transform: none; }
+.rcpt-names { margin-top: 2px; font-size: .85em; }

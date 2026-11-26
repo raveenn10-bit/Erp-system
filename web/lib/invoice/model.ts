@@ -11,7 +11,7 @@ export type InvoiceDetail = {
     business_name: string; business_address: string; business_phone: string; business_whatsapp?: string; business_email?: string;
     subtotal_cents: number; item_discount_cents: number; invoice_discount_cents: number; total_cents: number; paid_cents: number;
     due_at: string | null; payment_method: string; payment_terms: string; notes: string; terms: string; status: string;
-    customer_id?: string; warehouse_id?: string;
+    customer_id?: string; warehouse_id?: string; owner_name?: string; rep_name?: string;
   };
   items: Array<{
     id: string; name: string; label: string; quantity: number;
@@ -27,6 +27,8 @@ export type InvoiceLine = {
   freeQty?: number;
 };
 
+export type FreeIssueRow = { size: string; qty: number; items: string[] };
+
 export type InvoiceModel = {
   number: string; date: string; dueDate: string | null; status: string;
   business: { name: string; address: string; phone: string; whatsapp: string; email: string };
@@ -37,6 +39,10 @@ export type InvoiceModel = {
   subtotal: number; itemDiscount: number; invoiceDiscount: number; total: number; paid: number; outstanding: number;
   /** Value of free issue packets (shown separately, not as a discount). */
   freeValue: number; freeCount: number;
+  /** Free issue summary for the box under the table: 50g / 100g / 200g always, plus any other pack. */
+  freeIssue: FreeIssueRow[];
+  /** Names printed under the two signature lines. */
+  repName: string; ownerName: string;
   shareToken?: string;
 };
 
@@ -78,13 +84,28 @@ export function toInvoiceModel(d: InvoiceDetail, settings?: Record<string, strin
           discount: x.item_discount_cents - fv, total: x.line_cents, freeQty: fq || undefined,
         };
       });
-      return { lines, freeValue, freeCount, subtotal: i.subtotal_cents - freeValue, itemDiscount: i.item_discount_cents - freeValue };
+      return { lines, freeValue, freeCount, freeIssue: freeIssueRows(lines), subtotal: i.subtotal_cents - freeValue, itemDiscount: i.item_discount_cents - freeValue };
     })(),
     showShopPrice, showCustomerWhatsapp: settings?.invoice_show_customer_whatsapp !== 'false',
     invoiceDiscount: i.invoice_discount_cents,
     total: i.total_cents, paid: i.paid_cents, outstanding: Math.max(0, i.total_cents - i.paid_cents),
     shareToken: i.share_token,
+    repName: i.rep_name || '', ownerName: i.owner_name || '',
   };
+}
+
+const packGrams = (l: InvoiceLine) => Number((`${l.pack} ${l.product}`.match(/(\d+)\s*g\b/i) || [])[1]) || 0;
+/** Free packets grouped by pack size, like the printed bill book (50g / 100g / 200g). */
+export function freeIssueRows(lines: InvoiceLine[]): FreeIssueRow[] {
+  const rows = new Map<string, FreeIssueRow>([50, 100, 200].map(g => [`${g}g`, { size: `${g}g`, qty: 0, items: [] }]));
+  for (const l of lines) {
+    if (!l.freeQty) continue;
+    const g = packGrams(l), size = g ? `${g}g` : l.pack || l.product;
+    const row = rows.get(size) || { size, qty: 0, items: [] };
+    row.qty += l.freeQty; row.items.push(l.product);
+    rows.set(size, row);
+  }
+  return [...rows.values()];
 }
 
 /**
@@ -93,7 +114,7 @@ export function toInvoiceModel(d: InvoiceDetail, settings?: Record<string, strin
  * the final page. Capacities are tuned for the 794×1123 px page in
  * components/invoice-document.tsx.
  */
-export function paginate(lines: InvoiceLine[], cap = { first: 17, middle: 27, totalsBlock: 10 }): InvoiceLine[][] {
+export function paginate(lines: InvoiceLine[], cap = { first: 17, middle: 27, totalsBlock: 12 }): InvoiceLine[][] {
   const weight = (l: InvoiceLine) => (`${l.product} ${l.pack}`.length > 42 ? 2 : 1);
   const pages: InvoiceLine[][] = [[]];
   let used = 0;

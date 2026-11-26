@@ -135,6 +135,8 @@ export function testReceiptModel(businessName = 'PRINTER TEST'): InvoiceModel {
       { no: 2, product: 'සිංහල අකුරු පරීක්ෂාව', pack: '50g', qty: 1, unit: 9000, shopPrice: null, discount: 0, total: 9000 },
     ],
     freeValue: 18000, freeCount: 1,
+    freeIssue: [{ size: '50g', qty: 0, items: [] }, { size: '100g', qty: 1, items: ['Sample tea'] }, { size: '200g', qty: 0, items: [] }],
+    repName: '', ownerName: '',
     showShopPrice: false, showCustomerWhatsapp: false,
     subtotal: 225000, itemDiscount: 0, invoiceDiscount: 0, total: 225000, paid: 225000, outstanding: 0,
   };

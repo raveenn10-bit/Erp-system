@@ -54,10 +54,36 @@ function Table({ m, lines }: { m: InvoiceModel; lines: InvoiceModel['lines'] }) 
   );
 }
 
+/** "Free Issue  50g – / 100g – / 200g –" box, like the printed bill book. */
+function FreeIssueBox({ m }: { m: InvoiceModel }) {
+  return (
+    <div className="ninv-freebox">
+      <div className="ninv-freebox-head">Free Issue · නොමිලේ</div>
+      {m.freeIssue.map(r => (
+        <div className="ninv-freebox-row" key={r.size}>
+          <span className="sz">{r.size}</span>
+          <span className="dots" />
+          <b>{r.qty ? `${r.qty} pcs` : '–'}</b>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Signatures({ m }: { m: InvoiceModel }) {
+  return (
+    <section className="ninv-sign">
+      <div><i /><span>Customer signature · ගනුදෙනුකරු</span><small>{m.ownerName ? `${m.ownerName} · ` : ''}{m.customer.name}</small></div>
+      <div><i /><span>S/R signature · විකුණුම් නියෝජිත</span><small>{m.repName || 'Sales representative'}</small></div>
+    </section>
+  );
+}
+
 function Totals({ m }: { m: InvoiceModel }) {
   return (
     <section className="ninv-bottom">
       <div className="ninv-notes">
+        <FreeIssueBox m={m} />
         {m.paymentTerms && <p><b>Payment terms</b>{m.paymentTerms}</p>}
         {m.notes && <p><b>Notes</b>{m.notes}</p>}
         {m.terms && <p><b>Terms &amp; conditions</b>{m.terms}</p>}
@@ -106,10 +132,7 @@ export function InvoiceA4({ m }: { m: InvoiceModel }) {
             {!last && <p className="ninv-cont">Continued on next page…</p>}
             {last && <>
               <Totals m={m} />
-              <section className="ninv-sign">
-                <div><i /><span>Authorized signature</span><small>For {m.business.name}</small></div>
-                <div><i /><span>Customer signature</span><small>Received in good condition</small></div>
-              </section>
+              <Signatures m={m} />
             </>}
             <footer className="ninv-foot">
               <span>Thank you for your business · ස්තුතියි</span>
@@ -155,7 +178,11 @@ export function InvoiceReceipt({ m, spec }: { m: InvoiceModel; spec: { dots: num
       <div className="rcpt-row rcpt-b"><span>Balance</span><span>{lkr(m.outstanding, false)}</span></div>
       {m.dueDate && <div className="rcpt-row"><span>Due</span><span>{formatDate(m.dueDate)}</span></div>}
       <div className="rcpt-hr" />
-      <div className="rcpt-sign"><div><i />Issued by</div><div><i />Received by</div></div>
+      <div className="rcpt-b">FREE ISSUE</div>
+      {m.freeIssue.map(r => <div key={r.size} className="rcpt-row"><span>{r.size}</span><span className="rcpt-b">{r.qty ? `${r.qty} pcs` : '-'}</span></div>)}
+      <div className="rcpt-hr" />
+      <div className="rcpt-sign"><div><i />Customer signature</div><div><i />S/R signature</div></div>
+      {(m.ownerName || m.repName) && <div className="rcpt-sign rcpt-names"><div>{m.ownerName}</div><div>{m.repName}</div></div>}
       <div className="rcpt-c" style={{ marginTop: fs * 0.6 }}>Thank you! · ස්තුතියි</div>
     </div>
   );
