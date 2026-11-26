@@ -23,6 +23,7 @@ import distributionRoutes from "./distribution";
 import logisticsRoutes from "./logistics";
 import creditAlertsRoutes, { processReminders } from "./credit-alerts";
 import { renderPublicInvoiceHtml } from "./public-invoice";
+import adminRecordRoutes, { voidInvoiceStatements } from "./admin-records";
 const app = new Hono<Env>();
 const safe = z.string().trim().min(1).max(180);
 const key = z.string().min(12).max(128);
@@ -321,6 +322,7 @@ app.use("/api/*", requireUser);
 app.route("/api", distributionRoutes);
 app.route("/api", logisticsRoutes);
 app.route("/api", creditAlertsRoutes);
+app.route("/api", adminRecordRoutes);
 app.get("/api/me", async (c) => c.json({ user: current(c) }));
 app.post("/api/logout", async (c) => {
   const token = c.req
@@ -670,7 +672,7 @@ app.get("/api/products", async (c) => {
   return c.json(
     (
       await c.env.DB.prepare(
-        "SELECT p.id,p.name,p.sku,p.barcode,p.active,v.id AS variant_id,v.label,v.unit,v.grams,v.retail_cents,v.wholesale_cents,v.shop_price_cents,v.low_stock,COALESCE(s.quantity,0) AS main_stock FROM products p JOIN product_variants v ON v.product_id=p.id LEFT JOIN stock_balances s ON s.variant_id=v.id AND s.warehouse_id=? ORDER BY p.name LIMIT 500",
+        "SELECT p.id,p.name,p.sku,p.barcode,p.active,v.id AS variant_id,v.label,v.unit,v.grams,v.retail_cents,v.wholesale_cents,v.shop_price_cents,v.low_stock,COALESCE(s.quantity,0) AS main_stock FROM products p JOIN product_variants v ON v.product_id=p.id LEFT JOIN stock_balances s ON s.variant_id=v.id AND s.warehouse_id=? WHERE p.active=1 ORDER BY p.name LIMIT 500",
       )
         .bind("main")
         .all()
@@ -859,7 +861,7 @@ app.get("/api/stock", async (c) => {
           MAX(0,b.quantity-COALESCE(s.reserved_quantity,0)-COALESCE(s.allocated_quantity,0)) AS available_quantity
          FROM stock_balances b JOIN product_variants v ON v.id=b.variant_id JOIN products p ON p.id=v.product_id JOIN warehouses w ON w.id=b.warehouse_id
          LEFT JOIN warehouse_metadata wm ON wm.warehouse_id=w.id LEFT JOIN stock_balance_status s ON s.warehouse_id=b.warehouse_id AND s.variant_id=b.variant_id
-         WHERE (?=1 OR w.rep_id=?) ORDER BY p.name LIMIT 500`,
+         WHERE p.active=1 AND (?=1 OR w.rep_id=?) ORDER BY p.name LIMIT 500`,
       )
         .bind(p.admin, p.id)
         .all()
@@ -1093,54 +1095,15 @@ app.get("/api/invoices/:id", async (c) => {
 app.post("/api/invoices/:id/cancel", async (c) => {
   if (!current(c).admin) return c.json({ error: "Admin only" }, 403);
   const id = c.req.param("id"),
-    db = c.env.DB,
-    invoice = await db
-      .prepare("SELECT * FROM invoices WHERE id=?")
-      .bind(id)
-      .first<{ status: string; paid_cents: number; warehouse_id: string }>();
-  if (!invoice || invoice.status !== "posted")
-    return c.json({ error: "Invoice not found or already cancelled" }, 404);
-  if (invoice.paid_cents)
-    return c.json(
-      { error: "Refund recorded payments before cancellation" },
-      409,
-    );
-  const items = (
-    await db
-      .prepare(
-        "SELECT variant_id,quantity FROM invoice_items WHERE invoice_id=?",
-      )
-      .bind(id)
-      .all<{ variant_id: string; quantity: number }>()
-  ).results;
-  await db.batch([
-    db
-      .prepare(
-        "UPDATE invoices SET status='cancelled',cancelled_at=? WHERE id=? AND status='posted' AND paid_cents=0",
-      )
-      .bind(now(), id),
-    ...items.flatMap((x) => [
-      db
-        .prepare("INSERT INTO stock_movements VALUES(?,?,?,?,?,?,?,?)")
-        .bind(
-          uuid(),
-          x.variant_id,
-          null,
-          invoice.warehouse_id,
-          x.quantity,
-          "invoice_reversal",
-          id,
-          now(),
-        ),
-      db
-        .prepare(
-          "INSERT INTO stock_balances VALUES(?,?,?) ON CONFLICT(warehouse_id,variant_id) DO UPDATE SET quantity=quantity+excluded.quantity",
-        )
-        .bind(invoice.warehouse_id, x.variant_id, x.quantity),
-    ]),
-  ]);
-  await audit(db, current(c).id, "invoice.cancelled", id);
-  return c.json({ ok: true });
+    db = c.env.DB;
+  try {
+    const { statements, snapshot } = await voidInvoiceStatements(db, id);
+    await db.batch(statements);
+    await audit(db, current(c).id, "invoice.cancelled", id, JSON.stringify(snapshot));
+    return c.json({ ok: true });
+  } catch (error) {
+    return c.json({ error: (error as Error).message }, 409);
+  }
 });
 app.post("/api/payments", async (c) => {
   const denied = await guard(c, "payments.create");

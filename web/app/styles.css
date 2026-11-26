@@ -1220,3 +1220,13 @@ select[multiple] option { padding: 8px; border-radius: 7px; }
 .fi-step { grid-template-columns: 34px 1fr 34px !important; } .fi-step button { min-height: 36px !important; } .fi-step input { min-width: 0; width: 100%; text-align: center; font-size: 16px; font-weight: 700; }
 .fi-list > li { min-width: 0; } .fi-tiers { min-width: 0; }
 .fi-foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; } .fi-foot small { color: #287E65; font-size: 12px; }
+
+/* Admin record management (edit / delete) */
+button.danger { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--danger); background: var(--danger-soft); color: var(--danger-strong); border-radius: 10px; padding: 9px 14px; font-weight: 700; cursor: pointer; }
+button.danger:disabled { opacity: .5; cursor: not-allowed; }
+button.small { padding: 5px 9px; font-size: 12.5px; min-height: 32px; border-radius: 8px; }
+.row-actions, .confirm-pair { display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap; white-space: nowrap; }
+.admin-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; margin: 0 0 12px; border: 1px dashed var(--line, #d9ded7); border-radius: 12px; }
+.variant-edit { border: 1px solid var(--line, #d9ded7); border-radius: 12px; padding: 10px 12px; margin: 12px 0 0; }
+.variant-edit legend { font-weight: 750; padding: 0 6px; }
+tr.voided td { opacity: .55; text-decoration: line-through; }
