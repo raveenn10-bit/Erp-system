@@ -53,11 +53,15 @@ import {
   MoreHorizontal,
   TrendingUp,
   Truck,
+  MapPin,
 } from "lucide-react";
 import { api, idempotency, money } from "@/lib/api";
 import { InvoiceActions } from "@/components/invoice-actions";
 import { ProductAdminActions, StockAdminActions } from "@/components/admin-records";
 import type { InvoiceDetail } from "@/lib/invoice/model";
+import { DutyPanel } from "@/components/duty-panel";
+import { LiveTracking } from "@/components/live-tracking";
+import { endDutyForLogout, initTracking } from "@/lib/tracking";
 import { BiometricSettings } from "@/components/biometric-login";
 import { UserGuide } from "@/components/user-guide";
 import { PrinterSettingsPanel } from "@/components/printer-settings";
@@ -145,6 +149,7 @@ const menu = [
   { name: "Products", si: "නිෂ්පාදන", icon: Box },
   { name: "Inventory", si: "තොග", icon: Warehouse },
   { name: "Distribution", si: "බෙදාහැරීම", icon: Truck },
+  { name: "Live Tracking", si: "සජීවී ලුහුබැඳීම", icon: MapPin },
   { name: "Customers", si: "ගනුදෙනුකරුවන්", icon: Building2 },
   { name: "Invoices", si: "බිල්පත් / POS", icon: FileText },
   { name: "Free Issues", si: "නොමිලේ නිකුත් කිරීම්", icon: Gift },
@@ -208,6 +213,10 @@ function Workspace() {
     return () => window.removeEventListener("erp-back", onBack);
   }, [open, tab]);
   const user = me.data?.user;
+  // Resume a running duty (GPS) after reload / app restart, and send anything recorded offline.
+  useEffect(() => {
+    if (user?.id) void initTracking(user.id);
+  }, [user?.id]);
   const summary = useQuery({
     queryKey: ["dashboard"],
     queryFn: () => api<Summary>("/dashboard"),
@@ -311,7 +320,7 @@ function Workspace() {
   if (!user) return null;
   const visibleMenu = menu.filter(
     (i) => user.admin || (
-      !["Team", "Settings", "Reports", "Expenses"].includes(i.name) &&
+      !["Team", "Settings", "Reports", "Expenses", "Live Tracking"].includes(i.name) &&
       (i.name !== "Distribution" || user.role_id === "sales_rep")
     ),
   );
@@ -334,6 +343,7 @@ function Workspace() {
       await off.clearCache().catch(() => {});
     }
     await disableBiometric();
+    await endDutyForLogout();
     await api("/logout", { method: "POST" }).catch(() => {});
     router.replace("/login");
   }
@@ -494,6 +504,18 @@ function Workspace() {
               }}
             />
           )}{" "}
+          {tab === "Overview" && !user.admin && (
+            <DutyPanel userId={user.id} customers={customers.data || []} />
+          )}
+          {tab === "Live Tracking" && user.admin && (
+            <>
+              <Lead
+                title="Live rep tracking · සජීවී නියෝජිත ලුහුබැඳීම"
+                subtitle="Where your sales reps are now, their route, distance and shop visits."
+              />
+              <LiveTracking />
+            </>
+          )}
           {tab === "Overview" && (
             <Overview
               user={user}
