@@ -23,8 +23,31 @@ function closeTopOverlay(): boolean {
 }
 
 /** App-wide Android integration: back button, status bar, splash, network banner, session expiry. */
+/**
+ * After a new web version is deployed, a page that was already open still asks for
+ * the old JS/CSS chunks, which no longer exist, and navigation breaks. Reload once
+ * (at most every 30 s) to pick up the new version.
+ */
+function reloadOnStaleChunks() {
+  const stale = (msg: string) => /ChunkLoadError|Loading (CSS )?chunk|dynamically imported module|Importing a module script failed/i.test(msg);
+  const reload = () => {
+    try {
+      const last = Number(sessionStorage.getItem('erp-chunk-reload') || 0);
+      if (Date.now() - last < 30_000) return;
+      sessionStorage.setItem('erp-chunk-reload', String(Date.now()));
+    } catch { /* storage unavailable: still reload */ }
+    location.reload();
+  };
+  const onError = (e: ErrorEvent) => { if (stale(String(e.message || e.error?.message || ''))) reload(); };
+  const onReject = (e: PromiseRejectionEvent) => { const r = e.reason as { name?: string; message?: string } | undefined; if (stale(`${r?.name || ''} ${r?.message || r || ''}`)) reload(); };
+  window.addEventListener('error', onError);
+  window.addEventListener('unhandledrejection', onReject);
+  return () => { window.removeEventListener('error', onError); window.removeEventListener('unhandledrejection', onReject); };
+}
+
 export function NativeShell() {
   const [online, setOnline] = useState(true);
+  useEffect(() => (isNative() ? undefined : reloadOnStaleChunks()), []);
   useEffect(() => {
     initNativeShell(closeTopOverlay);
     let remove: (() => void) | undefined;
