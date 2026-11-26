@@ -1239,3 +1239,7 @@ tr.voided td { opacity: .55; text-decoration: line-through; }
 .ninv-freebox-row .dots { flex: 1; border-bottom: 1.5px dotted #9fb59a; transform: translateY(-3px); }
 .ninv-notes .ninv-freebox-row b, .ninv-freebox-row b { display: inline; min-width: 52px; text-align: right; color: #0C5051; font-size: 13px; letter-spacing: 0; text-transform: none; }
 .rcpt-names { margin-top: 2px; font-size: .85em; }
+/* A4: free issue as a full-width strip above the totals */
+.ninv-page > .ninv-freebox { display: flex; max-width: none; margin: 18px 0 0; }
+.ninv-page > .ninv-freebox .ninv-freebox-head { display: flex; align-items: center; padding: 8px 14px; white-space: nowrap; }
+.ninv-page > .ninv-freebox .ninv-freebox-row { flex: 1; border-top: 0; border-left: 1px solid #e3eed0; padding: 8px 14px; align-items: center; }

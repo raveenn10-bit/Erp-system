@@ -83,7 +83,6 @@ function Totals({ m }: { m: InvoiceModel }) {
   return (
     <section className="ninv-bottom">
       <div className="ninv-notes">
-        <FreeIssueBox m={m} />
         {m.paymentTerms && <p><b>Payment terms</b>{m.paymentTerms}</p>}
         {m.notes && <p><b>Notes</b>{m.notes}</p>}
         {m.terms && <p><b>Terms &amp; conditions</b>{m.terms}</p>}
@@ -131,6 +130,7 @@ export function InvoiceA4({ m }: { m: InvoiceModel }) {
             <Table m={m} lines={lines} />
             {!last && <p className="ninv-cont">Continued on next page…</p>}
             {last && <>
+              <FreeIssueBox m={m} />
               <Totals m={m} />
               <Signatures m={m} />
             </>}
@@ -170,6 +170,9 @@ export function InvoiceReceipt({ m, spec }: { m: InvoiceModel; spec: { dots: num
         </div>
       ))}
       <div className="rcpt-hr" />
+      <div className="rcpt-b">FREE ISSUE</div>
+      {m.freeIssue.map(r => <div key={r.size} className="rcpt-row"><span>{r.size}</span><span className="rcpt-b">{r.qty ? `${r.qty} pcs` : '-'}</span></div>)}
+      <div className="rcpt-hr" />
       <div className="rcpt-row"><span>Subtotal</span><span>{lkr(m.subtotal, false)}</span></div>
       {m.freeCount > 0 && <div className="rcpt-row"><span>Free issue</span><span>{m.freeCount} pcs FREE</span></div>}
       {m.itemDiscount + m.invoiceDiscount > 0 && <div className="rcpt-row"><span>Discounts</span><span>{lkr(-(m.itemDiscount + m.invoiceDiscount), false)}</span></div>}
@@ -177,9 +180,6 @@ export function InvoiceReceipt({ m, spec }: { m: InvoiceModel; spec: { dots: num
       <div className="rcpt-row"><span>Paid</span><span>{lkr(m.paid, false)}</span></div>
       <div className="rcpt-row rcpt-b"><span>Balance</span><span>{lkr(m.outstanding, false)}</span></div>
       {m.dueDate && <div className="rcpt-row"><span>Due</span><span>{formatDate(m.dueDate)}</span></div>}
-      <div className="rcpt-hr" />
-      <div className="rcpt-b">FREE ISSUE</div>
-      {m.freeIssue.map(r => <div key={r.size} className="rcpt-row"><span>{r.size}</span><span className="rcpt-b">{r.qty ? `${r.qty} pcs` : '-'}</span></div>)}
       <div className="rcpt-hr" />
       <div className="rcpt-sign"><div><i />Customer signature</div><div><i />S/R signature</div></div>
       {(m.ownerName || m.repName) && <div className="rcpt-sign rcpt-names"><div>{m.ownerName}</div><div>{m.repName}</div></div>}
