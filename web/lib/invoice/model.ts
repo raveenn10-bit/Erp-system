@@ -100,7 +100,7 @@ export function freeIssueRows(lines: InvoiceLine[]): FreeIssueRow[] {
   const rows = new Map<string, FreeIssueRow>([50, 100, 200].map(g => [`${g}g`, { size: `${g}g`, qty: 0, items: [] }]));
   for (const l of lines) {
     if (!l.freeQty) continue;
-    const g = packGrams(l), size = g ? `${g}g` : l.pack || l.product;
+    const g = packGrams(l), size = [50, 100, 200].includes(g) ? `${g}g` : [l.pack, l.product].filter(Boolean).join(' · ');
     const row = rows.get(size) || { size, qty: 0, items: [] };
     row.qty += l.freeQty; row.items.push(l.product);
     rows.set(size, row);

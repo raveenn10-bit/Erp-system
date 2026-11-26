@@ -51,6 +51,9 @@ export function FreeIssueSettings() {
     setBusy(true); setMsg(null);
     try {
       const clean = (rules || []).map(r => ({ ...r, tiers: r.tiers.filter(t => t.buy > 0 && t.free > 0) })).filter(r => r.tiers.length);
+      // Save products without an offer as switched off, so the 50/100/200 g default doesn't come back for them.
+      const listed = new Set(clean.map(r => r.variantId));
+      for (const p of prods) if (!listed.has(p.variant_id)) clean.push({ variantId: p.variant_id, active: false, tiers: DEFAULT_TIERS });
       await api('/billing/settings', { method: 'PATCH', body: JSON.stringify({ freeIssueRules: clean }) });
       await client.invalidateQueries({ queryKey: ['print-settings'] });
       setMsg({ t: 'Free issue offers saved — billing uses them on every phone and the web.', ok: true });
