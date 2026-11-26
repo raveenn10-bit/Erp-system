@@ -57,7 +57,7 @@ import {
 } from "lucide-react";
 import { api, idempotency, money } from "@/lib/api";
 import { InvoiceActions } from "@/components/invoice-actions";
-import { ProductAdminActions, StockAdminActions } from "@/components/admin-records";
+import { CustomerAdminActions, ProductAdminActions, StockAdminActions } from "@/components/admin-records";
 import type { InvoiceDetail } from "@/lib/invoice/model";
 import { DutyPanel } from "@/components/duty-panel";
 import { LiveTracking } from "@/components/live-tracking";
@@ -484,6 +484,7 @@ function Workspace() {
         >
           {customerAccountId && (
             <CustomerAccountModal
+              admin={!!user.admin}
               customerId={customerAccountId}
               onClose={() => setCustomerAccountId(null)}
               onViewInvoice={(id) => {
@@ -561,6 +562,7 @@ function Workspace() {
                         <th>Type</th>
                         <th>Credit terms</th>
                         <th>Account</th>
+                        {user.admin && <th>Actions</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -597,6 +599,14 @@ function Workspace() {
                               Account
                             </button>
                           </td>
+                          {user.admin && (
+                            <td>
+                              <CustomerAdminActions
+                                c={c as never}
+                                reps={(staff.data || []).filter((x) => x.role_id === "sales_rep" && x.active).map((x) => ({ id: x.id, name: x.name }))}
+                              />
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>

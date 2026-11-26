@@ -1,4 +1,5 @@
 "use client";
+import { PaymentDeleteButton } from "@/components/admin-records";
 import { useState, useCallback, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -106,7 +107,9 @@ export function CustomerAccountModal({
   customerId,
   onClose,
   onViewInvoice,
+  admin,
 }: {
+  admin?: boolean;
   customerId: string;
   onClose: () => void;
   onViewInvoice: (id: string) => void;
@@ -376,7 +379,7 @@ export function CustomerAccountModal({
             {activeTab === "payments" && (
               <div className="table-wrap">
                 <table className="data-table">
-                  <thead><tr><th>Date</th><th>Invoice</th><th>Amount</th><th>Method</th><th>Notes</th></tr></thead>
+                  <thead><tr><th>Date</th><th>Invoice</th><th>Amount</th><th>Method</th><th>Notes</th>{admin && <th />}</tr></thead>
                   <tbody>
                     {data.payments.map(p => (
                       <tr key={p.id}>
@@ -385,6 +388,7 @@ export function CustomerAccountModal({
                         <td style={{ color: "var(--success)", fontWeight: 700 }}>{money(p.amount_cents)}</td>
                         <td><Badge text={p.method} /></td>
                         <td style={{ fontSize: 12, color: "var(--muted)" }}>{p.notes || "—"}</td>
+                        {admin && <td><PaymentDeleteButton id={p.id} /></td>}
                       </tr>
                     ))}
                   </tbody>
