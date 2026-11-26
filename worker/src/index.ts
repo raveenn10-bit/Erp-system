@@ -24,6 +24,7 @@ import logisticsRoutes from "./logistics";
 import creditAlertsRoutes, { processReminders } from "./credit-alerts";
 import { renderPublicInvoiceHtml } from "./public-invoice";
 import adminRecordRoutes, { voidInvoiceStatements } from "./admin-records";
+import trackingRoutes from "./tracking";
 const app = new Hono<Env>();
 const safe = z.string().trim().min(1).max(180);
 const key = z.string().min(12).max(128);
@@ -323,6 +324,7 @@ app.route("/api", distributionRoutes);
 app.route("/api", logisticsRoutes);
 app.route("/api", creditAlertsRoutes);
 app.route("/api", adminRecordRoutes);
+app.route("/api", trackingRoutes);
 app.get("/api/me", async (c) => c.json({ user: current(c) }));
 app.post("/api/logout", async (c) => {
   const token = c.req

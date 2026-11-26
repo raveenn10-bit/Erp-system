@@ -3,13 +3,13 @@ import { useMemo, useState } from 'react';
 import {
   ArrowDownLeft, BarChart3, Bell, BookOpen, Box, Building2, Check, ChevronDown, ClipboardCheck, CloudOff, Gift,
   Info, LayoutDashboard, LogIn, PackageCheck, Printer, ReceiptText, RotateCcw, Search, Settings, ShieldCheck,
-  ShieldOff, Sparkles, Sun, TriangleAlert, Truck, Users, Wallet, Warehouse, X,
+  ShieldOff, Sparkles, Sun, TriangleAlert, Truck, Users, Wallet, Warehouse, X, MapPin,
 } from 'lucide-react';
 import { GUIDES, PERMISSIONS, roleOf, type GuideRole, type GuideSection } from '@/lib/guide';
 
 const ICONS: Record<string, typeof Box> = {
   ArrowDownLeft, BarChart3, Bell, Box, Building2, ClipboardCheck, CloudOff, Gift, LayoutDashboard, LogIn, PackageCheck,
-  Printer, ReceiptText, RotateCcw, Settings, ShieldOff, Sparkles, Sun, Truck, Users, Wallet, Warehouse,
+  Printer, ReceiptText, RotateCcw, Settings, ShieldOff, Sparkles, Sun, Truck, Users, Wallet, Warehouse, MapPin,
 };
 const ROLE_LABEL: Record<GuideRole, string> = { admin: 'Admin', sales_rep: 'Sales Rep', staff: 'Staff' };
 
