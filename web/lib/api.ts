@@ -14,7 +14,18 @@ export function friendlyError(raw: string): string {
   if (m.includes('credit limit exceeded')) return "This sale is over the customer's credit limit. Collect more payment now or raise the credit limit in Customers. · ණය සීමාව ඉක්මවයි.";
   if (m.includes('payment exceeds')) return 'Payment is more than the invoice amount. · ගෙවීම බිල්පතට වඩා වැඩියි.';
   if (m.includes('invoice not payable')) return 'This invoice cannot take payments (cancelled or closed). · මෙම බිල්පතට ගෙවිය නොහැක.';
-  if (m.includes('immutable')) return 'A finalized invoice cannot be changed. Use a credit note or return instead. · අවසන් කළ බිල්පත වෙනස් කළ නොහැක.';
+  if (m.includes('immutable')) return 'A finalized invoice cannot be changed. An admin can Edit or Delete it from the invoice. · අවසන් කළ බිල්පත වෙනස් කළ නොහැක.';
+  if (m.includes('customer has no credit terms')) return 'This shop has no credit. Take the full payment now, or ask the admin to set credit days for the shop (Customers). · මෙම කඩයට ණය නැත — සම්පූර්ණ මුදල ගන්න.';
+  if (m.includes('due date must be between')) return `${raw} · ගෙවිය යුතු දිනය ණය දින සීමාව තුළ විය යුතුය.`;
+  if (m.includes('amount paid exceeds')) return 'Paid amount is more than the bill total. · ගෙවූ මුදල බිල්පතට වඩා වැඩියි.';
+  if (m.includes('stock location not assigned')) return 'Use your own stock location (your van / rep stock), not the main warehouse. · ඔබේ තොග ස්ථානය තෝරන්න.';
+  if (m.includes('customer not assigned')) return 'This shop is not assigned to you. Ask the admin to assign it. · මෙම කඩය ඔබට පවරා නැත.';
+  if (m.includes('shop selling price is not configured')) return 'This product has no shop selling price. Choose Wholesale or Retail price. · Shop මිලක් නැත — Wholesale/Retail තෝරන්න.';
+  if (m.includes('product variant unavailable')) return 'A product on this bill is no longer available. Remove it and try again. · නිෂ්පාදනයක් තවදුරටත් නැත.';
+  if (m.includes('customer unavailable')) return 'This shop is inactive or missing. · කඩය සක්‍රිය නැත.';
+  if (m.includes('duplicate product variants')) return 'The same product is on the bill twice. Put it on one line with the total quantity. · එකම නිෂ්පාදනය දෙපාරක් තියෙනවා.';
+  if (m.includes('in-progress route is required')) return 'Start the daily route first (Distribution), or choose “Non-route invoice”. · දවසේ route එක ආරම්භ කරන්න.';
+  if (m === 'forbidden' || m === 'admin only') return 'You do not have permission for this. Ask the admin. · මේ සඳහා අවසර නැත.';
   if (m.includes('unique constraint') || m.includes('already exists')) return 'This record already exists. · මෙය දැනටමත් ඇත.';
   if (m.startsWith('[') && m.includes('"path"')) {
     try { const issue = JSON.parse(raw)[0]; return `Please check "${(issue.path || []).join(' › ') || 'the form'}": ${issue.message}`; } catch { /* fall through */ }

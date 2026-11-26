@@ -381,8 +381,10 @@ routes.post("/billing/invoices", async (c) => {
 });
 
 routes.get("/billing/settings", async (c) => {
-  const denied = await guard(c, "settings.view");
-  if (denied) return denied;
+  // Read-only invoice defaults (terms, shop price / WhatsApp display): sales reps need them to bill.
+  const p = current(c);
+  if (!(await permission(c, p, "settings.view")) && !(await permission(c, p, "invoices.view")))
+    return c.json({ error: "Forbidden" }, 403);
   const rows = (
     await c.env.DB.prepare(
       "SELECT key,value FROM system_settings WHERE key IN('invoice_show_shop_price','invoice_default_terms','invoice_show_customer_whatsapp')",
