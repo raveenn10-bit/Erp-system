@@ -75,5 +75,9 @@ export function defaultRules(products: ProductLike[]): FreeIssueRule[] {
 }
 /** Saved rules from Settings, or the default when nothing was ever saved (null). */
 export function effectiveRules(saved: FreeIssueRule[] | null | undefined, products: ProductLike[]): FreeIssueRule[] {
-  return Array.isArray(saved) ? saved : defaultRules(products);
+  if (!Array.isArray(saved)) return defaultRules(products);
+  // A 50/100/200 g pack added after the offers were saved still gets the default offer;
+  // anything the admin saved (including switched-off offers) wins.
+  const known = new Set(saved.map(r => r.variantId));
+  return [...saved, ...defaultRules(products).filter(r => !known.has(r.variantId))];
 }
