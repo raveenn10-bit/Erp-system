@@ -99,7 +99,7 @@ const productPatch = z.object({
   variants: z
     .array(
       z.object({
-        id: z.string().min(1),
+        id: z.string().min(1).optional(), // no id = new variant
         label: safe,
         unit: safe,
         grams: z.number().int().positive().nullable().optional(),
@@ -111,6 +111,7 @@ const productPatch = z.object({
       }),
     )
     .min(1),
+  removeVariantIds: z.array(z.string().min(1)).max(50).default([]),
 });
 
 routes.get("/products/:id", async (c) => {
@@ -140,13 +141,38 @@ routes.patch("/products/:id", async (c) => {
     await db.prepare("SELECT id FROM product_variants WHERE product_id=?").bind(id).all<{ id: string }>()
   ).results.map((x) => x.id);
   if (!owned.length) return c.json({ error: "Product not found" }, 404);
-  if (d.variants.some((v) => !owned.includes(v.id))) return c.json({ error: "Unknown variant" }, 400);
+  if (d.variants.some((v) => v.id && !owned.includes(v.id))) return c.json({ error: "Unknown variant" }, 400);
+  if (d.removeVariantIds.some((v) => !owned.includes(v))) return c.json({ error: "Unknown variant" }, 400);
+  if (owned.length - d.removeVariantIds.length + d.variants.filter((v) => !v.id).length < 1)
+    return c.json({ error: "A product needs at least one pack size. Delete the product instead." }, 400);
+  // Removing a pack size is only possible if it was never sold / moved (history must stay).
+  for (const vid of d.removeVariantIds) {
+    const used = await db
+      .prepare(
+        `SELECT (SELECT COUNT(*) FROM invoice_items WHERE variant_id=?1)+(SELECT COUNT(*) FROM stock_movements WHERE variant_id=?1)+(SELECT COUNT(*) FROM credit_note_items WHERE variant_id=?1) AS n`,
+      )
+      .bind(vid)
+      .first<{ n: number }>();
+    if (used?.n) return c.json({ error: "This pack size already has sales or stock history, so it can't be removed. Set its stock to 0 instead." }, 409);
+  }
   try {
     await db.batch([
+      ...d.removeVariantIds.flatMap((vid) => [
+        db.prepare("DELETE FROM stock_balance_status WHERE variant_id=?").bind(vid),
+        db.prepare("DELETE FROM stock_balances WHERE variant_id=?").bind(vid),
+        db.prepare("DELETE FROM product_variants WHERE id=? AND product_id=?").bind(vid, id),
+      ]),
+      ...d.variants
+        .filter((v) => !v.id)
+        .map((v) =>
+          db
+            .prepare("INSERT INTO product_variants(id,product_id,label,unit,grams,retail_cents,wholesale_cents,cost_cents,low_stock,shop_price_cents) VALUES(?,?,?,?,?,?,?,?,?,?)")
+            .bind(uuid(), id, v.label, v.unit, v.grams ?? null, v.retailCents, v.wholesaleCents, v.costCents, v.lowStock, v.shopPriceCents),
+        ),
       db
         .prepare("UPDATE products SET name=?,sku=?,barcode=? WHERE id=?")
         .bind(d.name, d.sku, d.barcode || null, id),
-      ...d.variants.map((v) =>
+      ...d.variants.filter((v) => v.id).map((v) =>
         db
           .prepare("UPDATE product_variants SET label=?,unit=?,grams=?,retail_cents=?,wholesale_cents=?,shop_price_cents=?,cost_cents=?,low_stock=? WHERE id=? AND product_id=?")
           .bind(v.label, v.unit, v.grams ?? null, v.retailCents, v.wholesaleCents, v.shopPriceCents, v.costCents, v.lowStock, v.id, id),
@@ -194,6 +220,7 @@ routes.post("/stock/set", async (c) => {
       variantId: z.string().min(1),
       quantity: z.number().int().nonnegative(),
       reason: z.string().trim().max(180).optional(),
+      remove: z.boolean().optional(), // also remove the (now empty) stock line from the list
     })
     .safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "Enter a valid quantity (0 or more)" }, 400);
@@ -205,7 +232,17 @@ routes.post("/stock/set", async (c) => {
     .first<{ quantity: number }>();
   if (!row) return c.json({ error: "Stock line not found" }, 404);
   const delta = d.quantity - row.quantity;
-  if (!delta) return c.json({ ok: true, delta: 0 });
+  const removeLine = () =>
+    d.remove && d.quantity === 0
+      ? db.batch([
+          db.prepare("DELETE FROM stock_balance_status WHERE warehouse_id=? AND variant_id=?").bind(d.warehouseId, d.variantId),
+          db.prepare("DELETE FROM stock_balances WHERE warehouse_id=? AND variant_id=? AND quantity=0").bind(d.warehouseId, d.variantId),
+        ])
+      : null;
+  if (!delta) {
+    await removeLine();
+    return c.json({ ok: true, delta: 0 });
+  }
   const id = uuid(),
     reason = d.reason || (d.quantity === 0 ? "Admin cleared stock" : "Admin stock correction");
   // Both statements are guarded by the quantity we read, so a sale that lands
@@ -219,8 +256,107 @@ routes.post("/stock/set", async (c) => {
       .bind(d.quantity, d.warehouseId, d.variantId, row.quantity),
   ]);
   if (!result[1].meta.changes) return c.json({ error: "Stock changed just now — refresh and try again" }, 409);
+  await removeLine();
   await audit(db, p.id, "stock.set", id, JSON.stringify({ ...d, from: row.quantity }));
   return c.json({ ok: true, delta });
+});
+
+/* --------------------------------------------------------------- customers */
+
+routes.delete("/customers/:id", async (c) => {
+  const p = current(c);
+  if (!p.admin) return c.json({ error: "Admin only" }, 403);
+  const db = c.env.DB,
+    id = c.req.param("id");
+  const cust = await db.prepare("SELECT shop_name FROM customers WHERE id=?").bind(id).first<{ shop_name: string }>();
+  if (!cust) return c.json({ error: "Customer not found" }, 404);
+  // No bills / history → remove for good. Otherwise hide it (history keeps the name).
+  try {
+    await db.batch([
+      db.prepare("DELETE FROM customer_assignments WHERE customer_id=?").bind(id),
+      db.prepare("DELETE FROM customer_geo WHERE customer_id=?").bind(id),
+      db.prepare("DELETE FROM credit_terms WHERE customer_id=?").bind(id),
+      db.prepare("DELETE FROM customers WHERE id=?").bind(id),
+    ]);
+    await audit(db, p.id, "customer.deleted", id, cust.shop_name);
+    return c.json({ ok: true, mode: "deleted" });
+  } catch {
+    await db.prepare("UPDATE customers SET active=0 WHERE id=?").bind(id).run();
+    await audit(db, p.id, "customer.archived", id, cust.shop_name);
+    return c.json({ ok: true, mode: "archived" });
+  }
+});
+
+/** Assign a shop to sales reps (replaces the current assignment). */
+routes.put("/customers/:id/reps", async (c) => {
+  const p = current(c);
+  if (!p.admin) return c.json({ error: "Admin only" }, 403);
+  const parsed = z.object({ repIds: z.array(z.string().min(1)).max(20) }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Invalid sales reps" }, 400);
+  const db = c.env.DB,
+    id = c.req.param("id");
+  await db.batch([
+    db.prepare("DELETE FROM customer_assignments WHERE customer_id=?").bind(id),
+    ...parsed.data.repIds.map((r) => db.prepare("INSERT OR IGNORE INTO customer_assignments(customer_id,rep_id) SELECT ?,id FROM users WHERE id=?").bind(id, r)),
+  ]);
+  await audit(db, p.id, "customer.assigned", id, JSON.stringify(parsed.data.repIds));
+  return c.json({ ok: true });
+});
+
+routes.get("/customers/:id/reps", async (c) => {
+  if (!current(c).admin) return c.json({ error: "Admin only" }, 403);
+  const rows = (await c.env.DB.prepare("SELECT rep_id FROM customer_assignments WHERE customer_id=?").bind(c.req.param("id")).all<{ rep_id: string }>()).results;
+  return c.json(rows.map((r) => r.rep_id));
+});
+
+/* ---------------------------------------------------------------- payments */
+
+/** Remove a wrongly recorded payment: the invoice balance goes back up. */
+routes.delete("/payments/:id", async (c) => {
+  const p = current(c);
+  if (!p.admin) return c.json({ error: "Admin only" }, 403);
+  const db = c.env.DB,
+    id = c.req.param("id");
+  const pay = await db
+    .prepare("SELECT p.id,p.invoice_id,p.amount_cents,p.method,p.created_at,i.number,i.status,i.paid_cents FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE p.id=?")
+    .bind(id)
+    .first<{ invoice_id: string; amount_cents: number; number: string; status: string; paid_cents: number }>();
+  if (!pay) return c.json({ error: "Payment not found" }, 404);
+  const result = await db.batch([
+    db.prepare("UPDATE invoices SET paid_cents=paid_cents-? WHERE id=? AND paid_cents>=?").bind(pay.amount_cents, pay.invoice_id, pay.amount_cents),
+    db.prepare("DELETE FROM payments WHERE id=? AND EXISTS(SELECT 1 FROM invoices WHERE id=? AND paid_cents>=0)").bind(id, pay.invoice_id),
+  ]);
+  if (!result[0].meta.changes) return c.json({ error: "Invoice balance doesn't match this payment — not removed." }, 409);
+  await audit(db, p.id, "payment.deleted", id, JSON.stringify(pay));
+  return c.json({ ok: true });
+});
+
+/* ---------------------------------------------------------------- vehicles */
+
+routes.delete("/vehicles/:id", async (c) => {
+  const p = current(c);
+  if (!p.admin) return c.json({ error: "Admin only" }, 403);
+  const db = c.env.DB,
+    id = c.req.param("id");
+  const v = await db.prepare("SELECT registration_number,stock_warehouse_id FROM vehicles WHERE id=?").bind(id).first<{ registration_number: string; stock_warehouse_id: string }>();
+  if (!v) return c.json({ error: "Vehicle not found" }, 404);
+  const stock = await db.prepare("SELECT COALESCE(SUM(quantity),0) AS q FROM stock_balances WHERE warehouse_id=?").bind(v.stock_warehouse_id).first<{ q: number }>();
+  if (stock?.q) return c.json({ error: "This vehicle still has stock. Transfer or clear it first." }, 409);
+  try {
+    await db.batch([
+      db.prepare("DELETE FROM vehicles WHERE id=?").bind(id),
+      db.prepare("DELETE FROM stock_balance_status WHERE warehouse_id=?").bind(v.stock_warehouse_id),
+      db.prepare("DELETE FROM stock_balances WHERE warehouse_id=?").bind(v.stock_warehouse_id),
+      db.prepare("DELETE FROM warehouse_metadata WHERE warehouse_id=?").bind(v.stock_warehouse_id),
+      db.prepare("DELETE FROM warehouses WHERE id=?").bind(v.stock_warehouse_id),
+    ]);
+    await audit(db, p.id, "vehicle.deleted", id, v.registration_number);
+    return c.json({ ok: true, mode: "deleted" });
+  } catch {
+    await db.prepare("UPDATE vehicles SET status='Inactive',updated_at=? WHERE id=?").bind(now(), id).run();
+    await audit(db, p.id, "vehicle.archived", id, v.registration_number);
+    return c.json({ ok: true, mode: "archived" });
+  }
 });
 
 export default routes;

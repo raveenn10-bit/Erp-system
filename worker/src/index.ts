@@ -721,8 +721,8 @@ app.get("/api/customers", async (c) => {
   const p = current(c);
   const q =
     p.admin || (await permission(c, p, "customers.view_all"))
-      ? "SELECT * FROM customers ORDER BY created_at DESC LIMIT 500"
-      : "SELECT c.* FROM customers c JOIN customer_assignments a ON a.customer_id=c.id WHERE a.rep_id=? ORDER BY c.created_at DESC LIMIT 500";
+      ? "SELECT * FROM customers WHERE active=1 ORDER BY created_at DESC LIMIT 500"
+      : "SELECT c.* FROM customers c JOIN customer_assignments a ON a.customer_id=c.id WHERE a.rep_id=? AND c.active=1 ORDER BY c.created_at DESC LIMIT 500";
   return c.json(
     (
       await c.env.DB.prepare(q)
