@@ -151,7 +151,7 @@ export function InvoiceReceipt({ m, spec }: { m: InvoiceModel; spec: { dots: num
   const fs = spec.fontPx;
   return (
     <div className="rcpt" style={{ width: dots, fontSize: fs, paddingLeft: spec.marginDots, paddingRight: spec.marginDots }}>
-      {spec.showLogo && <div className="rcpt-c"><img src="/nugathalawa-logo.jpg" alt="" style={{ width: Math.round(dots * 0.32), height: Math.round(dots * 0.32), borderRadius: '50%', filter: 'grayscale(1) contrast(1.4)' }} /></div>}
+      {spec.showLogo && <div className="rcpt-c"><img src="/nugathalawa-logo.jpg" alt="" style={{ display: 'block', margin: '0 auto', width: Math.round(dots * 0.32), height: Math.round(dots * 0.32), borderRadius: '50%', filter: 'grayscale(1) contrast(1.4)' }} /></div>}
       <div className="rcpt-c rcpt-b" style={{ fontSize: fs * 1.15 }}>{m.business.name}</div>
       {m.business.address && <div className="rcpt-c">{m.business.address}</div>}
       {m.business.phone && <div className="rcpt-c">Tel {m.business.phone}</div>}
